@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 185 30% 98.5%;
+    --foreground: 195 28% 14%;
+    --card: 0 0% 100%;
+    --card-foreground: 195 28% 14%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 195 28% 14%;
+    --primary: 185 66% 32%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 185 42% 94%;
+    --secondary-foreground: 188 55% 22%;
+    --muted: 190 22% 95%;
+    --muted-foreground: 195 12% 42%;
+    --accent: 185 46% 92%;
+    --accent-foreground: 188 55% 22%;
+    --destructive: 0 72% 48%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 152 55% 32%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 40%;
+    --warning-foreground: 0 0% 100%;
+    --border: 188 24% 89%;
+    --input: 188 24% 89%;
+    --ring: 185 66% 32%;
+    --radius: 0.85rem;
+
+    /* Paleta de gráficas (dataviz skill): categórica fija + estado */
+    --chart-series-1: #2a78d6; /* ingresos */
+    --chart-series-2: #e34948; /* egresos */
+    --chart-grid: #e1e0d9;
+    --chart-axis: #898781;
+    --status-good: #0ca30c;
+    --status-warning: #fab219;
+    --status-critical: #d03b3b;
+  }
+
+  .dark {
+    --background: 195 30% 8%;
+    --foreground: 185 20% 96%;
+    --card: 195 26% 11%;
+    --card-foreground: 185 20% 96%;
+    --popover: 195 26% 11%;
+    --popover-foreground: 185 20% 96%;
+    --primary: 184 60% 44%;
+    --primary-foreground: 195 35% 8%;
+    --secondary: 195 18% 18%;
+    --secondary-foreground: 185 20% 96%;
+    --muted: 195 18% 18%;
+    --muted-foreground: 190 12% 64%;
+    --accent: 195 18% 20%;
+    --accent-foreground: 185 20% 96%;
+    --destructive: 0 62% 44%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 152 45% 42%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 80% 50%;
+    --warning-foreground: 195 35% 8%;
+    --border: 195 18% 20%;
+    --input: 195 18% 20%;
+    --ring: 184 60% 44%;
+
+    --chart-series-1: #3987e5;
+    --chart-series-2: #e66767;
+    --chart-grid: #2c2c2a;
+    --chart-axis: #898781;
+    --status-good: #0ca30c;
+    --status-warning: #fab219;
+    --status-critical: #d03b3b;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+}
