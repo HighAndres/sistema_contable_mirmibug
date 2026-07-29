@@ -84,8 +84,10 @@ def _generar_conceptos(
                 "descripcion": descripcion,
                 "cantidad": float(cantidad),
                 "unidad_codigo": unidad,
-                "valor_unitario": float(valor_unitario),
-                "importe": float(importe),
+                # Decimal hasta el final: CfdiConcepto.valor_unitario/importe
+                # ya son columnas Decimal, no hay motivo para pasar por float.
+                "valor_unitario": valor_unitario,
+                "importe": importe,
             }
         )
     return conceptos
@@ -137,7 +139,7 @@ def generar_cfdis_mock(
             rango_precio = (150, 6000)
 
         conceptos_data = _generar_conceptos(rng, banco_conceptos, rango_precio=rango_precio)
-        subtotal = sum(Decimal(str(c["importe"])) for c in conceptos_data)
+        subtotal = sum((c["importe"] for c in conceptos_data), Decimal("0"))
         iva = (subtotal * IVA_TASA).quantize(Decimal("0.01"))
         total = subtotal + iva
 
@@ -154,9 +156,9 @@ def generar_cfdis_mock(
             nombre_receptor=nombre_receptor,
             forma_pago_codigo=rng.choice(FORMAS_PAGO),
             uso_cfdi_codigo=rng.choice(USOS_CFDI) if tipo == "ingreso" else None,
-            subtotal=float(subtotal),
-            iva=float(iva),
-            total=float(total),
+            subtotal=subtotal,
+            iva=iva,
+            total=total,
             fecha=fecha,
             estatus=estatus,
         )

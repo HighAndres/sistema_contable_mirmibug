@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
+from decimal import Decimal
 
 from sqlalchemy import Date, ForeignKey, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -33,9 +34,11 @@ class Cfdi(UUIDPKMixin, TimestampMixin, Base):
     forma_pago_codigo: Mapped[str | None] = mapped_column(String(5))
     uso_cfdi_codigo: Mapped[str | None] = mapped_column(String(5))
 
-    subtotal: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False)
-    iva: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False)
-    total: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False)
+    # Decimal (no float): montos legales/contables — nada de aritmética binaria
+    # de punto flotante entre la generación del CFDI y su almacenamiento.
+    subtotal: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    iva: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    total: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
 
     fecha: Mapped[date] = mapped_column(Date, index=True, nullable=False)
     estatus: Mapped[str] = mapped_column(String(15), default="vigente", nullable=False)  # vigente | cancelado
@@ -57,7 +60,7 @@ class CfdiConcepto(UUIDPKMixin, Base):
     descripcion: Mapped[str] = mapped_column(String(255), nullable=False)
     cantidad: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False)
     unidad_codigo: Mapped[str | None] = mapped_column(String(10))
-    valor_unitario: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False)
-    importe: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False)
+    valor_unitario: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    importe: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
 
     cfdi: Mapped[Cfdi] = relationship(back_populates="conceptos")

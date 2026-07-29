@@ -32,10 +32,12 @@ def dashboard_kpis(db: Session, *, empresa_id: uuid.UUID) -> DashboardKPIs:
         )
     ).one()
 
-    ingresos = Decimal(str(fila.ingresos))
-    egresos = Decimal(str(fila.egresos))
+    # Cfdi.total/iva ya son Decimal (Numeric) de punta a punta, así que SUM()
+    # regresa Decimal directo del driver — sin pasar por str()/float() a medias.
+    ingresos = Decimal(fila.ingresos)
+    egresos = Decimal(fila.egresos)
     utilidad = ingresos - egresos
-    iva_por_pagar = Decimal(str(fila.iva_trasladado)) - Decimal(str(fila.iva_acreditable))
+    iva_por_pagar = Decimal(fila.iva_trasladado) - Decimal(fila.iva_acreditable)
     isr_estimado = max(utilidad, Decimal("0")) * ISR_TASA_ESTIMADA
 
     alertas_por_severidad = dict(

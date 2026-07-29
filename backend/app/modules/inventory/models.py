@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -45,7 +46,7 @@ class Producto(UUIDPKMixin, TimestampMixin, Base):
     # categorías (p. ej. "Cómputo", "Mobiliario", "Consultoría"...).
     categoria: Mapped[str | None] = mapped_column(String(80), index=True)
     unidad_codigo: Mapped[str | None] = mapped_column(String(10))
-    costo_unitario: Mapped[float] = mapped_column(Numeric(14, 2), default=0, nullable=False)
+    costo_unitario: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, nullable=False)
     # Atributos libres clave/valor (p. ej. {"color": "negro", "talla": "M"}),
     # para que el mismo modelo se adapte a cualquier giro sin migraciones nuevas.
     atributos: Mapped[dict | None] = mapped_column(JSON)

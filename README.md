@@ -44,6 +44,20 @@ PYTHONPATH=. uvicorn app.main:app --reload
 - Docs: http://127.0.0.1:8000/docs
 - Health: `/health` (liveness) · `/health/db` (readiness)
 
+### Pruebas automatizadas
+
+```zsh
+cd backend
+./.venv/bin/pytest tests/ -v
+```
+
+Usan una base Postgres separada (`nubinox_test`, se crea sola si no existe) y cada test corre
+en su propia transacción con un SAVEPOINT interno (`join_transaction_mode="create_savepoint"`),
+así que aunque el código bajo prueba haga `commit()` (como toda la capa `crud/`), al terminar
+el test se revierte todo y la base de demo (`nubinox`) nunca se toca. 27 pruebas: login/bloqueo/
+tiempo constante/reset/cambio de contraseña, aislamiento entre empresas, invitar usuario,
+inventario (stock, atributos, 409 por stock insuficiente), motor de reglas, y precisión decimal.
+
 ## Frontend — puesta en marcha
 
 ```zsh
@@ -146,8 +160,10 @@ Verificado y sin hallazgos:
   `X-Empresa-Id` + membresía (o el bypass explícito de superadmin), nunca de un `empresa_id`
   tomado directamente del body/query de otro endpoint.
 - Sin SQL injection (SQLAlchemy parametrizado en todo el código, sin f-strings hacia SQL).
-- Sin XSS (no hay `dangerouslySetInnerHTML`/`innerHTML` en el frontend; React escapa por
-  defecto incluso el JSON libre de `atributos` y las descripciones de la bitácora).
+- Sin XSS: React escapa por defecto incluso el JSON libre de `atributos` y las descripciones
+  de la bitácora. El único `dangerouslySetInnerHTML` del código es el script de modo oscuro
+  (`THEME_INIT_SCRIPT`), una cadena estática sin ningún dato de usuario interpolado — no hay
+  `innerHTML` en ningún otro lado.
 - CORS restringido a orígenes explícitos (`BACKEND_CORS_ORIGINS`), sin comodín.
 - JWT con algoritmo fijo (`HS256` desde `settings`, no tomado del propio token) — sin
   superficie para "alg confusion".
@@ -160,3 +176,23 @@ Aceptado como riesgo conocido (fuera de alcance para una demo):
   sink de XSS en el código actual.
 - Sin límite de tamaño en el JSON de `atributos` de producto — requiere ya tener el permiso
   `inventario.ajustar`, así que el abuso requiere una cuenta autenticada y privilegiada.
+
+## Otras validaciones hechas después del lanzamiento inicial
+
+- **Precisión decimal**: los montos (`Cfdi.subtotal/iva/total`, `CfdiConcepto.valor_unitario/
+  importe`, `Producto.costo_unitario`) son `Decimal` de punta a punta en el backend (antes
+  eran `float` aunque la columna ya fuera `Numeric`, así que se perdía precisión binaria en
+  cada lectura/escritura y en la suma de cientos de CFDIs). `app/utils/money.py::to_money()`
+  cuantiza a 2 decimales cualquier monto que entra por la API antes de guardarlo. Los schemas
+  de respuesta se quedan en `float` a propósito (JSON no tiene tipo decimal nativo; el frontend
+  no cambió) — la conversión Decimal→float ocurre una sola vez, al final, no en cada paso
+  intermedio del cálculo.
+- **Navegación móvil**: el sidebar se oculta por debajo de `lg`; ahora hay un botón de
+  hamburguesa que abre el mismo menú como panel deslizante (reutiliza el componente `Dialog`),
+  filtrado por los mismos permisos que el sidebar de escritorio.
+- **Modo oscuro**: botón sol/luna en el header del dashboard y en el login. Se aplica antes de
+  hidratar (script inline en `layout.tsx`) para no parpadear en claro al cargar, y persiste en
+  `localStorage`.
+- **Accesibilidad básica**: `aria-label` en los botones de solo-ícono (menú móvil, tema,
+  eliminar usuario, quitar atributo); el botón de cerrar de los diálogos ya traía texto
+  accesible (`sr-only`).

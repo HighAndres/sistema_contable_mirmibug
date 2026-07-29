@@ -333,7 +333,12 @@ function SeccionSuperadmin() {
                         <Button variant="outline" size="sm" onClick={() => toggleActivo(u)}>
                           {u.is_active ? "Desactivar" : "Activar"}
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => eliminar(u)}>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => eliminar(u)}
+                          aria-label={`Eliminar a ${u.email}`}
+                        >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </>

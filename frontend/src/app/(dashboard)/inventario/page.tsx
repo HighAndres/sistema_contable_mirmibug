@@ -284,7 +284,13 @@ export default function InventarioPage() {
                           value={a.valor}
                           onChange={(e) => actualizarAtributo(idx, "valor", e.target.value)}
                         />
-                        <Button type="button" variant="ghost" size="icon" onClick={() => quitarAtributo(idx)}>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => quitarAtributo(idx)}
+                          aria-label="Quitar este atributo"
+                        >
                           <X className="h-4 w-4" />
                         </Button>
                       </div>

@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.modules.inventory.models import Almacen, Producto, StockMovimiento
+from app.utils.money import to_money
 
 
 class StockInsuficienteError(Exception):
@@ -71,7 +72,7 @@ def crear_producto(
         tipo=tipo,
         categoria=categoria,
         unidad_codigo=unidad_codigo,
-        costo_unitario=costo_unitario,
+        costo_unitario=to_money(costo_unitario),
         atributos=atributos,
     )
     db.add(producto)
