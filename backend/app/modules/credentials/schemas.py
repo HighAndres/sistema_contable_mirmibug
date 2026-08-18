@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict
 
@@ -15,3 +15,17 @@ class CredencialRead(BaseModel):
     tipo: str
     estado: str
     conectado_at: datetime | None
+
+
+class VigenciaCertificado(BaseModel):
+    tipo: str  # fiel | csd
+    numero_serie: str | None
+    vence: date | None
+    dias_restantes: int | None
+    estado: str  # sin_datos | vencida | por_vencer | vigente
+
+
+class VigenciasRead(BaseModel):
+    conectado: bool
+    fiel: VigenciaCertificado
+    csd: VigenciaCertificado

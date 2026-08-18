@@ -13,6 +13,7 @@ import uuid
 from datetime import date, timedelta
 from decimal import Decimal
 
+from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.orm import Session
 
 from app.modules.cfdi.models import Cfdi, CfdiConcepto
@@ -61,6 +62,25 @@ CONCEPTOS_EGRESO = [
 FORMAS_PAGO = ["01", "03", "04", "28", "99"]
 USOS_CFDI = ["G01", "G03", "P01", "S01"]
 
+EMPLEADOS = [
+    ("María Fernanda López Ruiz", "LORM850312MN1"),
+    ("José Antonio Ramírez Soto", "RASJ790825KL4"),
+    ("Ana Karen Torres Medina", "TOMA920417QW7"),
+    ("Luis Enrique Hernández Paz", "HEPL880930RT2"),
+    ("Daniela Castillo Ortega", "CAOD950206YU8"),
+    ("Ricardo Mendoza Villa", "MEVR830714PL5"),
+]
+
+
+def _siguiente_folio(db: Session, *, empresa_id, direccion: str) -> int:
+    """Consecutivo por empresa/dirección, continuando el máximo ya guardado."""
+    maximo = db.scalar(
+        select(func.max(cast(Cfdi.folio, Integer))).where(
+            Cfdi.empresa_id == empresa_id, Cfdi.direccion == direccion, Cfdi.folio.op("~")("^[0-9]+$")
+        )
+    )
+    return int(maximo or 0) + 1
+
 
 def _rfc_moral_aleatorio(rng: random.Random) -> str:
     letras = "".join(rng.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ", k=3))
@@ -106,18 +126,60 @@ def generar_cfdis_mock(
     rng = random.Random(seed)
     hoy = date.today()
     creados: list[Cfdi] = []
+    folios = {
+        "emitido": _siguiente_folio(db, empresa_id=empresa.id, direccion="emitido"),
+        "recibido": _siguiente_folio(db, empresa_id=empresa.id, direccion="recibido"),
+    }
 
     for i in range(cantidad):
         # El tipo se deriva de la dirección (no son independientes): un CFDI
         # "ingreso" siempre lo emite la empresa (es su venta) y un "egreso"
         # siempre lo recibe (es su gasto/compra) — así reports.crud puede
-        # sumar por tipo sin tener que cruzar también por dirección.
+        # sumar por tipo sin tener que cruzar también por dirección. La nómina
+        # la emite la empresa a sus empleados (sin IVA).
         direccion = rng.choices(["emitido", "recibido"], weights=[60, 40])[0]
         if direccion == "emitido":
-            tipo = rng.choices(["ingreso", "pago"], weights=[85, 15])[0]
+            tipo = rng.choices(["ingreso", "pago", "nomina"], weights=[75, 13, 12])[0]
         else:
             tipo = rng.choices(["egreso", "pago"], weights=[85, 15])[0]
         fecha = hoy - timedelta(days=rng.randint(0, dias_atras))
+
+        if tipo == "nomina":
+            nombre_emp, rfc_emp = rng.choice(EMPLEADOS)
+            # Quincena: la fecha cae en día 15 o último de mes.
+            fecha = fecha.replace(day=15) if fecha.day <= 15 else (fecha.replace(day=28))
+            sueldo = Decimal(str(rng.choice([6500, 8200, 9800, 12500, 15000, 18500])))
+            cfdi = Cfdi(
+                empresa_id=empresa.id,
+                uuid_fiscal=str(uuid.uuid4()).upper(),
+                version="4.0",
+                serie="N",
+                folio=str(folios["emitido"]),
+                tipo="nomina",
+                direccion="emitido",
+                rfc_emisor=empresa.rfc,
+                nombre_emisor=empresa.razon_social,
+                rfc_receptor=rfc_emp,
+                nombre_receptor=nombre_emp,
+                forma_pago_codigo="99",
+                metodo_pago_codigo=None,
+                uso_cfdi_codigo="CN01",
+                subtotal=sueldo,
+                iva=Decimal("0"),
+                total=sueldo,
+                fecha=fecha,
+                estatus="vigente",
+            )
+            cfdi.conceptos = [
+                CfdiConcepto(
+                    descripcion="Pago de nómina quincenal", cantidad=1.0, unidad_codigo="ACT",
+                    valor_unitario=sueldo, importe=sueldo,
+                )
+            ]
+            folios["emitido"] += 1
+            db.add(cfdi)
+            creados.append(cfdi)
+            continue
 
         usar_efos = incluir_irregulares and rng.random() < 0.04
         if usar_efos:
@@ -143,19 +205,31 @@ def generar_cfdis_mock(
         iva = (subtotal * IVA_TASA).quantize(Decimal("0.01"))
         total = subtotal + iva
 
-        estatus = "cancelado" if rng.random() < 0.03 else "vigente"
+        r_est = rng.random()
+        estatus = "cancelado" if r_est < 0.03 else ("en_proceso" if r_est < 0.045 else "vigente")
+
+        if tipo == "pago":
+            forma_pago, metodo_pago = rng.choice(["01", "03", "04", "28"]), None
+        else:
+            forma_pago = rng.choice(FORMAS_PAGO)
+            # "99 Por definir" => se pagará después (PPD); lo demás en una sola exhibición.
+            metodo_pago = "PPD" if forma_pago == "99" else "PUE"
 
         cfdi = Cfdi(
             empresa_id=empresa.id,
             uuid_fiscal=str(uuid.uuid4()).upper(),
+            version="4.0",
+            serie=("A" if direccion == "emitido" else rng.choice(["F", "FA", "B", None])) if tipo != "pago" else "P",
+            folio=str(folios[direccion]),
             tipo=tipo,
             direccion=direccion,
             rfc_emisor=rfc_emisor,
             nombre_emisor=nombre_emisor,
             rfc_receptor=rfc_receptor,
             nombre_receptor=nombre_receptor,
-            forma_pago_codigo=rng.choice(FORMAS_PAGO),
-            uso_cfdi_codigo=rng.choice(USOS_CFDI) if tipo == "ingreso" else None,
+            forma_pago_codigo=forma_pago,
+            metodo_pago_codigo=metodo_pago,
+            uso_cfdi_codigo=("CP01" if tipo == "pago" else rng.choice(USOS_CFDI)),
             subtotal=subtotal,
             iva=iva,
             total=total,
@@ -163,6 +237,7 @@ def generar_cfdis_mock(
             estatus=estatus,
         )
         cfdi.conceptos = [CfdiConcepto(**data) for data in conceptos_data]
+        folios[direccion] += 1
         db.add(cfdi)
         creados.append(cfdi)
 

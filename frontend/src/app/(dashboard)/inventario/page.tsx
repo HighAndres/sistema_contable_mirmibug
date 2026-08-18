@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { FileUp, Plus, X } from "lucide-react";
 
+import { CargaMasivaDialog } from "@/components/carga-masiva-dialog";
 import { useEmpresa } from "@/components/empresa-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError, apiFetch } from "@/lib/api";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate, formatMoney, formatUnit } from "@/lib/format";
 import { PERM, can } from "@/lib/permissions";
 import type { Almacen, Movimiento, Producto, StockItem } from "@/lib/types";
 
@@ -68,6 +69,10 @@ export default function InventarioPage() {
   const [nuevaCategoria, setNuevaCategoria] = useState("");
   const [nuevoCosto, setNuevoCosto] = useState("0");
   const [atributos, setAtributos] = useState<AtributoField[]>([]);
+
+  // --- carga masiva ---
+  const [openCargaProd, setOpenCargaProd] = useState(false);
+  const [openCargaMov, setOpenCargaMov] = useState(false);
 
   const cargar = useCallback(async () => {
     setLoading(true);
@@ -199,7 +204,36 @@ export default function InventarioPage() {
           </p>
         </div>
         {puedeAjustar && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={() => setOpenCargaProd(true)}>
+              <FileUp /> Importar productos
+            </Button>
+            <Button variant="outline" onClick={() => setOpenCargaMov(true)}>
+              <FileUp /> Importar movimientos
+            </Button>
+            <CargaMasivaDialog
+              open={openCargaProd}
+              onOpenChange={setOpenCargaProd}
+              titulo="Importar productos desde Excel"
+              descripcion="Alta o actualización masiva por SKU. Columnas: SKU, Nombre, Tipo, Categoría, Unidad SAT, Costo unitario, Clave SAT, Activo; cualquier columna extra se guarda como atributo."
+              endpointImportar="/inventory/productos/importar"
+              endpointPlantilla="/inventory/productos/plantilla"
+              nombrePlantilla="plantilla_productos.xlsx"
+              etiquetaCreados="productos nuevos"
+              etiquetaActualizados="actualizados"
+              onImportado={() => void cargar()}
+            />
+            <CargaMasivaDialog
+              open={openCargaMov}
+              onOpenChange={setOpenCargaMov}
+              titulo="Importar movimientos desde Excel"
+              descripcion="Entradas, salidas y ajustes en lote. Columnas: SKU, Almacén (código), Tipo, Cantidad, Costo unitario, Referencia, Nota. Las salidas que dejen stock negativo se rechazan por fila."
+              endpointImportar="/inventory/movimientos/importar"
+              endpointPlantilla="/inventory/movimientos/plantilla"
+              nombrePlantilla="plantilla_movimientos.xlsx"
+              etiquetaCreados="movimientos registrados"
+              onImportado={() => void cargar()}
+            />
             <Dialog
               open={openProd}
               onOpenChange={(o) => {
@@ -462,7 +496,8 @@ export default function InventarioPage() {
                     <TableHead>Almacén</TableHead>
                     <TableHead>Tipo</TableHead>
                     <TableHead className="text-right">Cantidad</TableHead>
-                    <TableHead>Nota</TableHead>
+                    <TableHead className="text-right">Costo unit.</TableHead>
+                    <TableHead>Referencia / nota</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -477,7 +512,13 @@ export default function InventarioPage() {
                           <Badge variant={TIPO_MOV_VARIANT[m.tipo]}>{m.tipo}</Badge>
                         </TableCell>
                         <TableCell className="text-right tabular-nums">{m.cantidad}</TableCell>
-                        <TableCell className="text-muted-foreground">{m.nota ?? m.referencia ?? ""}</TableCell>
+                        <TableCell className="text-right tabular-nums text-muted-foreground">
+                          {m.costo_unitario != null ? formatUnit(m.costo_unitario, 4) : "—"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {m.referencia && <span className="mr-2 font-mono text-xs">{m.referencia}</span>}
+                          {m.nota ?? ""}
+                        </TableCell>
                       </TableRow>
                     ))}
                 </TableBody>

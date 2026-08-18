@@ -20,6 +20,9 @@ import app.modules.cfdi.models  # noqa: F401
 import app.modules.rules.models  # noqa: F401
 import app.modules.inventory.models  # noqa: F401
 import app.modules.bitacora.models  # noqa: F401
+import app.modules.pedimentos.models  # noqa: F401
+import app.modules.conciliacion.models  # noqa: F401
+import app.modules.terceros.models  # noqa: F401
 from app.core.config import settings
 from app.db.base import Base
 

@@ -27,6 +27,15 @@ CATALOGOS: dict[str, dict[str, str]] = {
         "28": "Tarjeta de débito",
         "99": "Por definir",
     },
+    "metodo_pago": {
+        "PUE": "Pago en una sola exhibición",
+        "PPD": "Pago en parcialidades o diferido",
+    },
+    "estatus_cfdi": {
+        "vigente": "Vigente",
+        "cancelado": "Cancelado",
+        "en_proceso": "En proceso de cancelación",
+    },
     "uso_cfdi": {
         "G01": "Adquisición de mercancías",
         "G03": "Gastos en general",
@@ -34,6 +43,7 @@ CATALOGOS: dict[str, dict[str, str]] = {
         "P01": "Por definir",
         "S01": "Sin efectos fiscales",
         "CP01": "Pagos",
+        "CN01": "Nómina",
     },
     "unidad_medida": {
         "H87": "Pieza",

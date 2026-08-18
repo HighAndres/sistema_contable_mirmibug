@@ -50,6 +50,8 @@ class Producto(UUIDPKMixin, TimestampMixin, Base):
     # Atributos libres clave/valor (p. ej. {"color": "negro", "talla": "M"}),
     # para que el mismo modelo se adapte a cualquier giro sin migraciones nuevas.
     atributos: Mapped[dict | None] = mapped_column(JSON)
+    # Clave del catálogo c_ClaveProdServ del SAT (para facturar el producto).
+    clave_prodserv: Mapped[str | None] = mapped_column(String(10))
     activo: Mapped[bool] = mapped_column(default=True, nullable=False)
 
     def __repr__(self) -> str:  # pragma: no cover
@@ -73,6 +75,9 @@ class StockMovimiento(UUIDPKMixin, Base):
     cantidad: Mapped[int] = mapped_column(Integer, nullable=False)  # con signo
     referencia: Mapped[str | None] = mapped_column(String(120))
     nota: Mapped[str | None] = mapped_column(String(255))
+    # Costo unitario con el que entró/salió esta capa (landed cost cuando viene
+    # de un pedimento). Nulo en movimientos históricos o ajustes sin costo.
+    costo_unitario: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
     fecha: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     producto: Mapped[Producto] = relationship(lazy="selectin")

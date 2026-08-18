@@ -5,7 +5,7 @@ from app.api.deps import EmpresaContext, get_current_empresa, require_permission
 from app.db.session import get_db
 from app.modules.bitacora import crud as bitacora_crud
 from app.modules.credentials import crud
-from app.modules.credentials.schemas import CredencialConectarRequest, CredencialRead
+from app.modules.credentials.schemas import CredencialConectarRequest, CredencialRead, VigenciaCertificado, VigenciasRead
 
 router = APIRouter(prefix="/credentials", tags=["credentials"])
 
@@ -33,3 +33,25 @@ def conectar_sat(
         descripcion=f"Conexión con el SAT establecida ({payload.tipo.upper()})",
     )
     return credencial
+
+
+@router.get("/vigencias", response_model=VigenciasRead)
+def vigencias(
+    ctx: EmpresaContext = Depends(get_current_empresa),
+    db: Session = Depends(get_db),
+) -> VigenciasRead:
+    """Vigencia de la e.firma (FIEL) y del sello (CSD) de la empresa, con aviso
+    cuando faltan 60 días o menos."""
+    c = crud.get_por_empresa(db, ctx.empresa.id)
+
+    def cert(tipo: str, serie, vence) -> VigenciaCertificado:
+        estado, dias = crud.estado_vigencia(vence)
+        return VigenciaCertificado(tipo=tipo, numero_serie=serie, vence=vence, dias_restantes=dias, estado=estado)
+
+    if c is None:
+        return VigenciasRead(conectado=False, fiel=cert("fiel", None, None), csd=cert("csd", None, None))
+    return VigenciasRead(
+        conectado=c.estado == "conectado",
+        fiel=cert("fiel", c.fiel_numero_serie, c.fiel_vigencia_hasta),
+        csd=cert("csd", c.csd_numero_serie, c.csd_vigencia_hasta),
+    )

@@ -41,8 +41,11 @@ function parseErrorBody(body: unknown): string | null {
 
 async function doFetch(path: string, init: RequestInit, token: string | null): Promise<Response> {
   const empresaId = getEmpresaActivaId();
+  // Con FormData (subida de archivos) el navegador fija el Content-Type con
+  // el boundary multipart; forzarlo a JSON rompería la petición.
+  const esFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(esFormData ? {} : { "Content-Type": "application/json" }),
     ...(init.headers as Record<string, string> | undefined),
   };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -80,4 +83,32 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
+}
+
+/** Descarga un archivo binario autenticado (PDF, etc.) y dispara el guardado en el navegador. */
+export async function apiDownload(path: string, nombreArchivo: string): Promise<void> {
+  const token = getAccessToken();
+  if (!token) throw new ApiError(401, "No autenticado");
+  let res = await doFetch(path, { method: "GET" }, token);
+  if (res.status === 401 && (await tryRefresh())) {
+    res = await doFetch(path, { method: "GET" }, getAccessToken());
+  }
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      detail = parseErrorBody(await res.json()) || detail;
+    } catch {
+      /* sin cuerpo JSON */
+    }
+    throw new ApiError(res.status, detail);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nombreArchivo;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }

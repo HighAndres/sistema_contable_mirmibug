@@ -16,8 +16,15 @@ export const PERM = {
   SAT_SINCRONIZAR: "sat.sincronizar",
   CFDI_LEER: "cfdi.leer",
   REPORTES_LEER: "reportes.leer",
+  IMPUESTOS_LEER: "impuestos.leer",
+  CONCILIACION_LEER: "conciliacion.leer",
+  CONCILIACION_GESTIONAR: "conciliacion.gestionar",
+  TERCEROS_LEER: "terceros.leer",
+  TERCEROS_GESTIONAR: "terceros.gestionar",
   INVENTARIO_LEER: "inventario.leer",
   INVENTARIO_AJUSTAR: "inventario.ajustar",
+  PEDIMENTOS_LEER: "pedimentos.leer",
+  PEDIMENTOS_GESTIONAR: "pedimentos.gestionar",
   BITACORA_LEER: "bitacora.leer",
 } as const;
 

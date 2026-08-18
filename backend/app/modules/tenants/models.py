@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, String, UniqueConstraint
+from decimal import Decimal
+
+from sqlalchemy import Boolean, ForeignKey, Numeric, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPKMixin
@@ -20,7 +22,15 @@ class Empresa(UUIDPKMixin, TimestampMixin, Base):
     rfc: Mapped[str] = mapped_column(String(13), unique=True, index=True, nullable=False)
     razon_social: Mapped[str] = mapped_column(String(255), nullable=False)
     regimen_fiscal_codigo: Mapped[str | None] = mapped_column(String(10))
+    # Coeficiente de utilidad (art. 14 LISR) para pagos provisionales de
+    # personas morales del régimen general; p. ej. 0.1234. Nulo = no configurado.
+    coeficiente_utilidad: Mapped[Decimal | None] = mapped_column(Numeric(7, 4))
     activo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    @property
+    def tipo_persona(self) -> str:
+        """'moral' (RFC de 12) o 'fisica' (RFC de 13), como lo define el propio RFC."""
+        return "fisica" if len(self.rfc.strip()) == 13 else "moral"
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Empresa {self.rfc}>"

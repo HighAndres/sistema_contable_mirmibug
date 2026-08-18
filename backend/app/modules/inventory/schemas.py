@@ -29,6 +29,7 @@ class ProductoRead(BaseModel):
     unidad_codigo: str | None
     costo_unitario: float
     atributos: dict | None
+    clave_prodserv: str | None = None
     activo: bool
 
 
@@ -67,6 +68,7 @@ class MovimientoRead(BaseModel):
     cantidad: int
     referencia: str | None
     nota: str | None
+    costo_unitario: float | None
     fecha: datetime
     sku: str
     nombre_producto: str
@@ -78,6 +80,7 @@ class MovimientoRead(BaseModel):
             id=m.id,
             tipo=m.tipo,
             cantidad=m.cantidad,
+            costo_unitario=float(m.costo_unitario) if m.costo_unitario is not None else None,
             referencia=m.referencia,
             nota=m.nota,
             fecha=m.fecha,

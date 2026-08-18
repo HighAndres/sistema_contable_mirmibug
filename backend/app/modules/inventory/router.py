@@ -1,11 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import Response
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.deps import EmpresaContext, require_permissions
 from app.db.session import get_db
 from app.modules.bitacora import crud as bitacora_crud
-from app.modules.inventory import crud
+from app.modules.inventory import carga_masiva, crud
 from app.modules.inventory.crud import StockInsuficienteError
+from app.utils.tabular import ArchivoTabularError
 from app.modules.inventory.schemas import (
     AlmacenCreate,
     AlmacenRead,
@@ -165,3 +168,66 @@ def registrar_movimiento(
         metadatos={"sku": producto.sku, "tipo": payload.tipo, "cantidad": payload.cantidad},
     )
     return MovimientoRead.from_orm_model(movimiento)
+
+
+# ---------- Carga masiva (Excel / CSV) ----------
+
+
+class CargaMasivaResponse(BaseModel):
+    creados: int
+    actualizados: int
+    errores: list[dict]
+
+
+def _xlsx(contenido: bytes, nombre: str) -> Response:
+    return Response(content=contenido, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f'attachment; filename="{nombre}"'})
+
+
+@router.get("/productos/plantilla", response_class=Response)
+def plantilla_productos(ctx: EmpresaContext = Depends(require_permissions("inventario.leer"))) -> Response:
+    return _xlsx(carga_masiva.plantilla_productos(), "plantilla_productos.xlsx")
+
+
+@router.get("/movimientos/plantilla", response_class=Response)
+def plantilla_movimientos(ctx: EmpresaContext = Depends(require_permissions("inventario.leer"))) -> Response:
+    return _xlsx(carga_masiva.plantilla_movimientos(), "plantilla_movimientos.xlsx")
+
+
+@router.post("/productos/importar", response_model=CargaMasivaResponse)
+async def importar_productos(
+    archivo: UploadFile = File(...),
+    ctx: EmpresaContext = Depends(require_permissions("inventario.ajustar")),
+    db: Session = Depends(get_db),
+) -> CargaMasivaResponse:
+    """Alta/actualización masiva de productos por SKU desde Excel o CSV."""
+    contenido = await archivo.read()
+    try:
+        r = carga_masiva.importar_productos(db, empresa_id=ctx.empresa.id, contenido=contenido, nombre=archivo.filename or "")
+    except ArchivoTabularError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc))
+    bitacora_crud.registrar(
+        db, empresa_id=ctx.empresa.id, usuario=ctx.usuario, accion="inventario.carga_productos",
+        descripcion=f"Carga masiva de productos: {r.creados} nuevos, {r.actualizados} actualizados, {len(r.errores)} filas con error",
+        metadatos={"archivo": archivo.filename, "creados": r.creados, "actualizados": r.actualizados, "errores": len(r.errores)},
+    )
+    return CargaMasivaResponse(creados=r.creados, actualizados=r.actualizados, errores=r.errores)
+
+
+@router.post("/movimientos/importar", response_model=CargaMasivaResponse)
+async def importar_movimientos(
+    archivo: UploadFile = File(...),
+    ctx: EmpresaContext = Depends(require_permissions("inventario.ajustar")),
+    db: Session = Depends(get_db),
+) -> CargaMasivaResponse:
+    """Registro masivo de entradas/salidas/ajustes desde Excel o CSV."""
+    contenido = await archivo.read()
+    try:
+        r = carga_masiva.importar_movimientos(db, empresa_id=ctx.empresa.id, contenido=contenido, nombre=archivo.filename or "")
+    except ArchivoTabularError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc))
+    bitacora_crud.registrar(
+        db, empresa_id=ctx.empresa.id, usuario=ctx.usuario, accion="inventario.carga_movimientos",
+        descripcion=f"Carga masiva de movimientos: {r.creados} registrados, {len(r.errores)} filas con error",
+        metadatos={"archivo": archivo.filename, "registrados": r.creados, "errores": len(r.errores)},
+    )
+    return CargaMasivaResponse(creados=r.creados, actualizados=0, errores=r.errores)

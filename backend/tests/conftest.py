@@ -33,6 +33,9 @@ import app.modules.catalogs.models  # noqa: E402,F401
 import app.modules.cfdi.models  # noqa: E402,F401
 import app.modules.credentials.models  # noqa: E402,F401
 import app.modules.inventory.models  # noqa: E402,F401
+import app.modules.pedimentos.models  # noqa: E402,F401
+import app.modules.conciliacion.models  # noqa: E402,F401
+import app.modules.terceros.models  # noqa: E402,F401
 import app.modules.rules.models  # noqa: E402,F401
 import app.modules.tenants.models  # noqa: E402,F401
 from app.core.config import settings  # noqa: E402
@@ -103,14 +106,22 @@ def client(db):
 
 PERMISOS_TEST = [
     "empresas.leer",
+    "empresas.editar",
     "usuarios.leer",
     "usuarios.invitar",
     "credenciales.gestionar",
     "sat.sincronizar",
     "cfdi.leer",
     "reportes.leer",
+    "impuestos.leer",
+    "conciliacion.leer",
+    "conciliacion.gestionar",
+    "terceros.leer",
+    "terceros.gestionar",
     "inventario.leer",
     "inventario.ajustar",
+    "pedimentos.leer",
+    "pedimentos.gestionar",
     "bitacora.leer",
 ]
 
@@ -130,8 +141,15 @@ def seed_rbac(db):
             permisos["sat.sincronizar"],
             permisos["cfdi.leer"],
             permisos["reportes.leer"],
+            permisos["impuestos.leer"],
+            permisos["conciliacion.leer"],
+            permisos["conciliacion.gestionar"],
+            permisos["terceros.leer"],
+            permisos["terceros.gestionar"],
             permisos["inventario.leer"],
             permisos["inventario.ajustar"],
+            permisos["pedimentos.leer"],
+            permisos["pedimentos.gestionar"],
         ],
     )
     db.add_all([admin_rol, contador_rol])

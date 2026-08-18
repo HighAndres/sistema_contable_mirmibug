@@ -6,12 +6,18 @@ import { useEffect, useState } from "react";
 import {
   Banknote,
   Building2,
+  Calculator,
+  Contact,
+  Truck,
   ClipboardList,
   LayoutDashboard,
   LogOut,
   Menu,
   Package,
+  Percent,
+  Scale,
   Receipt,
+  Ship,
   Users,
 } from "lucide-react";
 
@@ -43,6 +49,12 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard, permisos: [] },
   { href: "/cfdi", label: "CFDI", icon: Receipt, permisos: [PERM.CFDI_LEER] },
   { href: "/inventario", label: "Inventario", icon: Package, permisos: [PERM.INVENTARIO_LEER] },
+  { href: "/pedimentos", label: "Pedimentos", icon: Ship, permisos: [PERM.PEDIMENTOS_LEER] },
+  { href: "/iva", label: "IVA", icon: Percent, permisos: [PERM.IMPUESTOS_LEER] },
+  { href: "/isr", label: "ISR", icon: Calculator, permisos: [PERM.IMPUESTOS_LEER] },
+  { href: "/conciliacion", label: "Conciliación", icon: Scale, permisos: [PERM.CONCILIACION_LEER] },
+  { href: "/clientes", label: "Clientes", icon: Contact, permisos: [PERM.TERCEROS_LEER] },
+  { href: "/proveedores", label: "Proveedores", icon: Truck, permisos: [PERM.TERCEROS_LEER] },
   { href: "/reportes", label: "Reportes", icon: Banknote, permisos: [PERM.REPORTES_LEER] },
   { href: "/bitacora", label: "Bitácora", icon: ClipboardList, permisos: [PERM.BITACORA_LEER] },
   { href: "/usuarios", label: "Usuarios", icon: Users, permisos: [PERM.USUARIOS_LEER] },
@@ -162,7 +174,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </DialogContent>
       </Dialog>
 
-      <div className="flex flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-14 items-center gap-3 border-b bg-card px-4">
           <button
             aria-label="Abrir menú de navegación"
@@ -189,7 +201,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           )}
           <ThemeToggle />
         </header>
-        <main className="flex-1 overflow-y-auto bg-background p-4 sm:p-6 lg:p-8">
+        <main className="min-w-0 flex-1 overflow-y-auto bg-background p-4 sm:p-6 lg:p-8">
           {!empresasLoading && empresas.length === 0 && pathname !== "/empresas" ? (
             <div className="mx-auto max-w-md rounded-lg border bg-card p-6 text-center">
               <p className="mb-4 text-sm text-muted-foreground">

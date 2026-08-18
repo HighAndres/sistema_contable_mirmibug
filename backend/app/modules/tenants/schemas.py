@@ -16,6 +16,8 @@ class EmpresaRead(BaseModel):
     rfc: str
     razon_social: str
     regimen_fiscal_codigo: str | None
+    tipo_persona: str = "moral"
+    coeficiente_utilidad: float | None = None
     activo: bool
 
 

@@ -27,3 +27,6 @@ Thumbs.db
 
 # ---- Claude Code (config local, no compartir) ----
 .claude/settings.local.json
+
+# TypeScript incremental build info
+*.tsbuildinfo
