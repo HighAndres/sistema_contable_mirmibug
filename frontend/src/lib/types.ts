@@ -135,9 +135,34 @@ export interface Cfdi {
   /** Derivado: estado de cobro/pago de la factura; null en REP, nómina y notas de crédito. */
   estado_pago: EstadoPago | null;
   pagado_rep: number;
+  /** Clasificación que captura el contador (papel de trabajo). */
+  clasificacion: Clasificacion | null;
+  concepto: string | null;
+  cuenta_contable: string | null;
+  referencia_bancaria: string | null;
 }
 
 export type EstadoPago = "pagada" | "parcial" | "pendiente";
+
+/** Efecto fiscal del gasto. Sin clasificar (null) cuenta como deducible. */
+export type Clasificacion = "deducible" | "no_deducible" | "deduccion_personal";
+
+export const CLASIFICACIONES: { valor: Clasificacion; etiqueta: string; ayuda: string }[] = [
+  { valor: "deducible", etiqueta: "Deducible", ayuda: "Resta en el ISR y su IVA es acreditable" },
+  { valor: "no_deducible", etiqueta: "No deducible", ayuda: "No resta en el ISR ni acredita IVA" },
+  { valor: "deduccion_personal", etiqueta: "Deducción personal", ayuda: "Solo aplica en la declaración anual" },
+];
+
+export interface ValoresClasificacion {
+  conceptos: string[];
+  cuentas_contables: string[];
+  sin_clasificar: number;
+}
+
+export interface ClasificacionMasivaResultado {
+  actualizados: number;
+  omitidos: number;
+}
 
 export interface PagoDocto {
   cfdi_pago_id: string;
@@ -675,4 +700,16 @@ export interface TerceroDetalle extends Tercero {
   por_pagar: Antiguedad;
   total_emitido: number;
   total_recibido: number;
+}
+
+/** Reporte tabular con el layout de los portales que usa el despacho. */
+export interface ReporteCfdi {
+  formato: string;
+  descripcion: string;
+  columnas: string[];
+  filas: unknown[][];
+  total: number;
+  truncado: boolean;
+  /** Columnas que hoy salen vacías porque aún no guardamos ese dato del XML. */
+  sin_dato: string[];
 }

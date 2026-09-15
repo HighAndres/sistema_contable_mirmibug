@@ -123,7 +123,7 @@ def test_endpoints_iva_isr_y_configuracion(client, seed_rbac, db):
     assert iva.status_code == 200, iva.text
     b = iva.json()
     assert b["saldo"] == round(b["trasladado_cobrado"] - b["acreditable_pagado"], 2)
-    assert {f["concepto"] for f in b["emitidas"]} == {"PUE", "REP", "Pago manual", "Notas de crédito", "PPD pendiente", "No considerados"}
+    assert {f["concepto"] for f in b["emitidas"]} == {"PUE", "REP", "Pago manual", "Notas de crédito", "PPD pendiente", "No deducibles", "No considerados"}
     anual = client.get(f"/api/v1/impuestos/iva?anio={hoy.year}", headers=headers).json()
     assert anual["mes"] is None and anual["trasladado_cobrado"] >= b["trasladado_cobrado"]
 

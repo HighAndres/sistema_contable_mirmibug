@@ -18,6 +18,7 @@ export const PERM = {
   CFDI_EDITAR: "cfdi.editar",
   REPORTES_LEER: "reportes.leer",
   IMPUESTOS_LEER: "impuestos.leer",
+  NOMINA_LEER: "nomina.leer",
   CONCILIACION_LEER: "conciliacion.leer",
   CONCILIACION_GESTIONAR: "conciliacion.gestionar",
   TERCEROS_LEER: "terceros.leer",

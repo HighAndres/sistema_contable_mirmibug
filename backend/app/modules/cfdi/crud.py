@@ -10,6 +10,10 @@ from app.modules.cfdi.models import Cfdi, CfdiPagoDocto
 TIPOS = ("ingreso", "egreso", "pago", "nomina", "nota_credito")
 ESTATUS = ("vigente", "cancelado", "en_proceso")
 ESTADOS_PAGO = ("pagada", "pendiente")
+CLASIFICACIONES = ("deducible", "no_deducible", "deduccion_personal")
+# Solo las facturas de gasto/ingreso se clasifican: un REP no es un gasto y
+# la nómina se deduce por su propia vía.
+TIPOS_CLASIFICABLES = ("ingreso", "egreso", "nota_credito")
 
 
 def _pagado_rep_subquery(empresa_id: uuid.UUID):
@@ -46,6 +50,8 @@ def _aplicar_filtros(
     uuid_fiscal: str | None = None,
     q: str | None = None,
     estado_pago: str | None = None,
+    clasificacion: str | None = None,
+    concepto: str | None = None,
 ) -> Select:
     stmt = stmt.where(Cfdi.empresa_id == empresa_id)
     if tipo:
@@ -87,6 +93,13 @@ def _aplicar_filtros(
             stmt = stmt.where(es_factura, Cfdi.estatus != "cancelado", or_(Cfdi.metodo_pago_codigo != "PPD", ppd_pagada))
         elif estado_pago == "pendiente":
             stmt = stmt.where(es_factura, Cfdi.estatus == "vigente", Cfdi.metodo_pago_codigo == "PPD", ~ppd_pagada)
+    if clasificacion:
+        if clasificacion == "sin_clasificar":
+            stmt = stmt.where(Cfdi.clasificacion.is_(None), Cfdi.tipo.in_(TIPOS_CLASIFICABLES))
+        else:
+            stmt = stmt.where(Cfdi.clasificacion == clasificacion)
+    if concepto:
+        stmt = stmt.where(Cfdi.concepto.ilike(f"%{concepto.strip()}%"))
     if q:
         # Búsqueda libre: UUID, serie/folio, RFC o nombre de cualquiera de las partes.
         like = f"%{q.strip()}%"
@@ -224,3 +237,158 @@ def quitar_pago_manual(db: Session, *, cfdi: Cfdi) -> Cfdi:
     db.commit()
     db.refresh(cfdi)
     return cfdi
+
+
+# ---------------------------------------------------------------------------
+# Clasificación manual (papel de trabajo del contador)
+# ---------------------------------------------------------------------------
+
+
+def _limpiar(valor: str | None) -> str | None:
+    """Quita espacios sobrantes y respeta mayúsculas/minúsculas tal cual se
+    capturaron; las búsquedas por concepto son insensibles a may/min."""
+    return (valor or "").strip() or None
+
+
+def clasificar(
+    db: Session,
+    *,
+    cfdi: Cfdi,
+    clasificacion: str | None,
+    concepto: str | None,
+    cuenta_contable: str | None,
+    referencia_bancaria: str | None,
+) -> Cfdi:
+    """Escribe la clasificación completa de un CFDI. Los campos que llegan vacíos
+    se limpian: es la edición de una fila del papel de trabajo, no un parche."""
+    if cfdi.tipo not in TIPOS_CLASIFICABLES:
+        raise ValueError("Solo se clasifican facturas de ingreso, gasto o notas de crédito")
+    cfdi.clasificacion = clasificacion
+    cfdi.concepto = _limpiar(concepto)
+    cfdi.cuenta_contable = _limpiar(cuenta_contable)
+    cfdi.referencia_bancaria = _limpiar(referencia_bancaria)
+    db.commit()
+    db.refresh(cfdi)
+    return cfdi
+
+
+def clasificar_masivo(
+    db: Session,
+    *,
+    empresa_id: uuid.UUID,
+    cfdi_ids: list[uuid.UUID],
+    clasificacion: str | None,
+    concepto: str | None,
+    cuenta_contable: str | None,
+    referencia_bancaria: str | None,
+) -> tuple[int, int]:
+    """Aplica los campos NO nulos a varios CFDIs. Devuelve (actualizados, omitidos).
+
+    A diferencia de `clasificar`, aquí lo que va en nulo no se toca: así se puede
+    marcar el concepto de un lote sin borrarle la cuenta contable a cada uno."""
+    cambios = {
+        k: v
+        for k, v in (
+            ("clasificacion", clasificacion),
+            ("concepto", _limpiar(concepto)),
+            ("cuenta_contable", _limpiar(cuenta_contable)),
+            ("referencia_bancaria", _limpiar(referencia_bancaria)),
+        )
+        if v is not None
+    }
+    if not cambios:
+        raise ValueError("No se indicó ningún campo que aplicar")
+    # Sin duplicados: si llegara dos veces el mismo id, `omitidos` mentiría.
+    pedidos = list(dict.fromkeys(cfdi_ids))
+    encontrados = list(
+        db.scalars(select(Cfdi).where(Cfdi.empresa_id == empresa_id, Cfdi.id.in_(pedidos)))
+    )
+    actualizados = 0
+    for cfdi in encontrados:
+        if cfdi.tipo not in TIPOS_CLASIFICABLES:
+            continue
+        for campo, valor in cambios.items():
+            setattr(cfdi, campo, valor)
+        actualizados += 1
+    db.commit()
+    return actualizados, len(pedidos) - actualizados
+
+
+def valores_clasificacion(db: Session, *, empresa_id: uuid.UUID) -> tuple[list[str], list[str], int]:
+    """Conceptos y cuentas contables ya usados en la empresa (para autocompletar)
+    y cuántas facturas siguen sin clasificar."""
+    conceptos = list(
+        db.scalars(
+            select(Cfdi.concepto)
+            .where(Cfdi.empresa_id == empresa_id, Cfdi.concepto.is_not(None))
+            .distinct()
+            .order_by(Cfdi.concepto)
+        )
+    )
+    cuentas = list(
+        db.scalars(
+            select(Cfdi.cuenta_contable)
+            .where(Cfdi.empresa_id == empresa_id, Cfdi.cuenta_contable.is_not(None))
+            .distinct()
+            .order_by(Cfdi.cuenta_contable)
+        )
+    )
+    sin_clasificar = db.scalar(
+        select(func.count())
+        .select_from(Cfdi)
+        .where(
+            Cfdi.empresa_id == empresa_id,
+            Cfdi.clasificacion.is_(None),
+            Cfdi.estatus == "vigente",
+            Cfdi.tipo.in_(TIPOS_CLASIFICABLES),
+        )
+    )
+    return conceptos, cuentas, int(sin_clasificar or 0)
+
+
+# ---------------------------------------------------------------------------
+# Reportes (layout de los despachos)
+# ---------------------------------------------------------------------------
+
+TOPE_REPORTE = 10_000
+
+
+def filas_reporte(db: Session, *, empresa_id: uuid.UUID, **filtros) -> tuple[list, int]:
+    """CFDIs que cumplen los filtros de la lista, con la fecha en que se
+    cobraron/pagaron ya resuelta (REP, pago manual o la propia fecha si es PUE).
+    Devuelve (filas, total) y corta en TOPE_REPORTE."""
+    from app.modules.cfdi.reportes import FilaCfdi
+
+    stmt = _aplicar_filtros(select(Cfdi), empresa_id=empresa_id, **filtros)
+    total = db.scalar(select(func.count()).select_from(stmt.order_by(None).subquery())) or 0
+    cfdis = list(db.scalars(stmt.order_by(Cfdi.fecha, Cfdi.uuid_fiscal).limit(TOPE_REPORTE)))
+
+    # Lo liquidado por REP: qué complemento pagó cada factura PPD y cuándo. Si
+    # hay varias parcialidades se queda la última, que es la fecha en que la
+    # factura terminó de cobrarse.
+    uuids = [c.uuid_fiscal for c in cfdis if c.metodo_pago_codigo == "PPD"]
+    pagos: dict[str, tuple] = {}
+    if uuids:
+        rep = aliased(Cfdi)
+        filas_rep = db.execute(
+            select(CfdiPagoDocto.uuid_relacionado, rep.uuid_fiscal, CfdiPagoDocto.fecha_pago, rep.fecha, CfdiPagoDocto.imp_pagado)
+            .join(rep, rep.id == CfdiPagoDocto.cfdi_pago_id)
+            .where(rep.empresa_id == empresa_id, rep.estatus == "vigente", CfdiPagoDocto.uuid_relacionado.in_(uuids))
+        ).all()
+        for u, uuid_rep, fecha_docto, fecha_rep, imp in sorted(filas_rep, key=lambda f: f[2] or f[3]):
+            acumulado = (pagos[u][2] if u in pagos else Decimal("0")) + Decimal(imp or 0)
+            pagos[u] = (uuid_rep, fecha_docto or fecha_rep, acumulado)
+
+    filas = []
+    for c in cfdis:
+        fecha_pago, uuid_pago, pagado = None, None, Decimal("0")
+        if c.tipo in ("ingreso", "egreso"):
+            if c.metodo_pago_codigo == "PPD":
+                if c.uuid_fiscal in pagos:
+                    uuid_pago, fecha_pago, pagado = pagos[c.uuid_fiscal]
+                if c.pago_manual_fecha is not None:
+                    fecha_pago, pagado = c.pago_manual_fecha, Decimal(c.total)
+            else:
+                fecha_pago, pagado = c.fecha, Decimal(c.total)  # PUE: se paga al emitirse
+        filas.append(FilaCfdi(cfdi=c, fecha_pago=fecha_pago, uuid_pago=uuid_pago, pagado=pagado))
+    return filas, int(total)

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import EmpresaContext, require_permissions
 from app.db.session import get_db
 from app.modules.bitacora import crud as bitacora_crud
-from app.modules.cfdi import crud
+from app.modules.cfdi import crud, reportes
 from app.modules.cfdi.models import Cfdi
 from app.modules.cfdi.schemas import (
     CfdiConceptoRead,
@@ -16,8 +16,13 @@ from app.modules.cfdi.schemas import (
     CfdiPage,
     CfdiRead,
     CfdiResumen,
+    ClasificacionMasivaRequest,
+    ClasificacionMasivaResultado,
+    ClasificacionRequest,
     PagoDoctoRead,
     PagoManualRequest,
+    ReporteCfdi,
+    ValoresClasificacion,
 )
 from app.modules.rules import crud as rules_crud
 
@@ -39,6 +44,8 @@ def _filtros(
     uuid_fiscal: str | None = Query(default=None, max_length=36),
     q: str | None = Query(default=None, max_length=120, description="Búsqueda libre: UUID, folio, RFC, nombre"),
     estado_pago: str | None = Query(default=None, pattern="^(pagada|pendiente)$", description="Solo facturas: pagada (PUE, PPD con REP completo o marcada a mano) o pendiente (PPD sin pagar)"),
+    clasificacion: str | None = Query(default=None, pattern="^(deducible|no_deducible|deduccion_personal|sin_clasificar)$"),
+    concepto: str | None = Query(default=None, max_length=60, description="Concepto del papel de trabajo (contiene)"),
 ) -> dict:
     return {
         "tipo": tipo,
@@ -55,6 +62,8 @@ def _filtros(
         "uuid_fiscal": uuid_fiscal,
         "q": q,
         "estado_pago": estado_pago,
+        "clasificacion": clasificacion,
+        "concepto": concepto,
     }
 
 
@@ -99,6 +108,92 @@ def resumen(
     de la lista, ignorando el filtro `tipo` para que las 4 tarjetas siempre se vean."""
     por_tipo = crud.resumen_por_tipo(db, empresa_id=ctx.empresa.id, **filtros)
     return CfdiResumen(**por_tipo, anios=crud.anios_disponibles(db, empresa_id=ctx.empresa.id))
+
+
+@router.get("/clasificacion/valores", response_model=ValoresClasificacion)
+def valores_clasificacion(
+    ctx: EmpresaContext = Depends(require_permissions("cfdi.leer")),
+    db: Session = Depends(get_db),
+) -> ValoresClasificacion:
+    """Conceptos y cuentas contables ya usados en la empresa (para autocompletar
+    al clasificar) y cuántas facturas vigentes siguen sin clasificar."""
+    conceptos, cuentas, sin_clasificar = crud.valores_clasificacion(db, empresa_id=ctx.empresa.id)
+    return ValoresClasificacion(conceptos=conceptos, cuentas_contables=cuentas, sin_clasificar=sin_clasificar)
+
+
+@router.post("/clasificacion-masiva", response_model=ClasificacionMasivaResultado)
+def clasificar_masivo(
+    payload: ClasificacionMasivaRequest,
+    ctx: EmpresaContext = Depends(require_permissions("cfdi.editar")),
+    db: Session = Depends(get_db),
+) -> ClasificacionMasivaResultado:
+    """Aplica los campos indicados a varias facturas de golpe. Los que van en
+    nulo no se tocan, para capturar por lotes sin pisar lo ya clasificado."""
+    try:
+        actualizados, omitidos = crud.clasificar_masivo(
+            db,
+            empresa_id=ctx.empresa.id,
+            cfdi_ids=payload.cfdi_ids,
+            clasificacion=payload.clasificacion,
+            concepto=payload.concepto,
+            cuenta_contable=payload.cuenta_contable,
+            referencia_bancaria=payload.referencia_bancaria,
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+    campos = ", ".join(
+        f"{k}={v}"
+        for k, v in (
+            ("clasificación", payload.clasificacion),
+            ("concepto", payload.concepto),
+            ("cuenta", payload.cuenta_contable),
+            ("referencia", payload.referencia_bancaria),
+        )
+        if v is not None
+    )
+    bitacora_crud.registrar(
+        db,
+        empresa_id=ctx.empresa.id,
+        usuario=ctx.usuario,
+        accion="cfdi.clasificacion_masiva",
+        descripcion=f"Clasificación aplicada a {actualizados} factura(s): {campos}",
+        entidad_tipo="cfdi",
+        metadatos={"actualizados": actualizados, "omitidos": omitidos, "solicitados": len(payload.cfdi_ids)},
+    )
+    return ClasificacionMasivaResultado(actualizados=actualizados, omitidos=omitidos)
+
+
+@router.get("/reporte/{formato}", response_model=ReporteCfdi)
+def reporte(
+    formato: str,
+    filtros: dict = Depends(_filtros),
+    ctx: EmpresaContext = Depends(require_permissions("cfdi.leer")),
+    db: Session = Depends(get_db),
+) -> ReporteCfdi:
+    """Reporte con el mismo layout que el contador baja hoy de su portal
+    (ONEFACTURE / MiAdminPro), sobre TODOS los CFDI que cumplen los filtros de la
+    lista — no solo la página visible. El formato `general` es, columna por
+    columna, la hoja INGRESOS/GASTOS de sus papeles de trabajo, más las columnas
+    que él captura a mano y que aquí ya vienen resueltas."""
+    if formato not in reportes.FORMATOS:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Formato desconocido. Disponibles: {', '.join(reportes.FORMATOS)}")
+    extra = reportes.PERMISO_EXTRA.get(formato)
+    if extra and extra not in ctx.permisos:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "No tienes permisos para ver datos de nómina")
+    tipo_forzado = reportes.TIPO_FORZADO.get(formato)
+    if tipo_forzado:
+        filtros = {**filtros, "tipo": tipo_forzado}
+    filas, total = crud.filas_reporte(db, empresa_id=ctx.empresa.id, **filtros)
+    columnas, valores, sin_dato = reportes.construir(formato, filas)
+    return ReporteCfdi(
+        formato=formato,
+        descripcion=reportes.FORMATOS[formato],
+        columnas=columnas,
+        filas=valores,
+        total=total,
+        truncado=total > crud.TOPE_REPORTE,
+        sin_dato=sin_dato,
+    )
 
 
 @router.get("/{cfdi_id}", response_model=CfdiDetalleRead)
@@ -199,5 +294,49 @@ def quitar_pago_manual(
         descripcion=f"Se quitó la marca de pago a mano (del {fecha_anterior}) a la factura {cfdi.uuid_fiscal[:8]}…",
         entidad_tipo="cfdi",
         entidad_id=cfdi.id,
+    )
+    return _con_estado_pago(db, empresa_id=ctx.empresa.id, cfdis=[cfdi])[0]
+
+
+@router.put("/{cfdi_id}/clasificacion", response_model=CfdiRead)
+def clasificar(
+    cfdi_id: uuid.UUID,
+    payload: ClasificacionRequest,
+    ctx: EmpresaContext = Depends(require_permissions("cfdi.editar")),
+    db: Session = Depends(get_db),
+) -> CfdiRead:
+    """Captura la clasificación del papel de trabajo sobre una factura: efecto
+    fiscal (deducible / no deducible / deducción personal), concepto, cuenta
+    contable y referencia bancaria. Un gasto no deducible o de deducción
+    personal deja de restar en el ISR y su IVA deja de ser acreditable."""
+    cfdi = _factura(db, ctx=ctx, cfdi_id=cfdi_id)
+    anterior = cfdi.clasificacion
+    try:
+        crud.clasificar(
+            db,
+            cfdi=cfdi,
+            clasificacion=payload.clasificacion,
+            concepto=payload.concepto,
+            cuenta_contable=payload.cuenta_contable,
+            referencia_bancaria=payload.referencia_bancaria,
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc))
+    folio = "-".join(filter(None, (cfdi.serie, cfdi.folio))) or f"{cfdi.uuid_fiscal[:8]}…"
+    bitacora_crud.registrar(
+        db,
+        empresa_id=ctx.empresa.id,
+        usuario=ctx.usuario,
+        accion="cfdi.clasificacion",
+        descripcion=f"Factura {folio}: clasificación {anterior or 'sin clasificar'} → {cfdi.clasificacion or 'sin clasificar'}"
+        + (f" ({cfdi.concepto})" if cfdi.concepto else ""),
+        entidad_tipo="cfdi",
+        entidad_id=cfdi.id,
+        metadatos={
+            "clasificacion": cfdi.clasificacion,
+            "concepto": cfdi.concepto,
+            "cuenta_contable": cfdi.cuenta_contable,
+            "referencia_bancaria": cfdi.referencia_bancaria,
+        },
     )
     return _con_estado_pago(db, empresa_id=ctx.empresa.id, cfdis=[cfdi])[0]

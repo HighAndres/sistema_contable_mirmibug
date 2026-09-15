@@ -48,6 +48,59 @@ class CfdiRead(BaseModel):
     # lo cubierto por REP. None en REP, nómina y notas de crédito.
     estado_pago: str | None = None  # pagada | parcial | pendiente
     pagado_rep: float = 0
+    # Clasificación capturada por el contador.
+    clasificacion: str | None = None  # deducible | no_deducible | deduccion_personal
+    concepto: str | None = None
+    cuenta_contable: str | None = None
+    referencia_bancaria: str | None = None
+
+
+CLASIFICACIONES = ("deducible", "no_deducible", "deduccion_personal")
+
+
+class ClasificacionRequest(BaseModel):
+    """Todos los campos son opcionales, pero se escriben tal cual llegan: mandar
+    `null` en uno lo limpia. Es la captura del papel de trabajo del contador."""
+
+    clasificacion: str | None = Field(default=None, pattern="^(deducible|no_deducible|deduccion_personal)$")
+    concepto: str | None = Field(default=None, max_length=60)
+    cuenta_contable: str | None = Field(default=None, max_length=20)
+    referencia_bancaria: str | None = Field(default=None, max_length=40)
+
+
+class ClasificacionMasivaRequest(ClasificacionRequest):
+    """Misma clasificación aplicada a varios CFDIs de golpe: un ejercicio real
+    trae ~1,500 gastos y se capturan por lotes (todos los peajes, todo lo de un
+    proveedor…). Los campos que van en `null` NO se tocan, a diferencia de la
+    edición de uno solo, para poder marcar solo el concepto sin borrar la cuenta."""
+
+    cfdi_ids: list[uuid.UUID] = Field(min_length=1, max_length=500)
+
+
+class ClasificacionMasivaResultado(BaseModel):
+    actualizados: int
+    omitidos: int  # no encontrados, de otra empresa o no clasificables (REP/nómina)
+
+
+class ReporteCfdi(BaseModel):
+    """Reporte tabular listo para exportar, con el layout de los despachos."""
+
+    formato: str
+    descripcion: str
+    columnas: list[str]
+    filas: list[list]
+    total: int  # CFDIs que cumplen los filtros (puede ser mayor que len(filas))
+    truncado: bool
+    #: Columnas que hoy siempre salen vacías porque aún no guardamos ese dato.
+    sin_dato: list[str]
+
+
+class ValoresClasificacion(BaseModel):
+    """Lo ya usado en la empresa, para autocompletar sin inventar un catálogo."""
+
+    conceptos: list[str]
+    cuentas_contables: list[str]
+    sin_clasificar: int
 
 
 class PagoManualRequest(BaseModel):

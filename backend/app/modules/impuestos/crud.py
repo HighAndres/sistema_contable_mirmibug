@@ -2,8 +2,8 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import extract, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, extract, func, or_, select
+from sqlalchemy.orm import Session, aliased
 
 from app.modules.cfdi.models import Cfdi, CfdiPagoDocto
 from app.modules.impuestos import calculos
@@ -56,6 +56,16 @@ def pagos_manuales_periodo(db: Session, *, empresa_id: uuid.UUID, anio: int, mes
     return list(db.scalars(stmt))
 
 
+def uuids_no_deducibles(db: Session, *, empresa_id: uuid.UUID) -> set[str]:
+    """Facturas marcadas por el contador como no deducibles o de deducción
+    personal: su IVA no es acreditable, ni el de los REP que las liquidan."""
+    return set(
+        db.scalars(
+            select(Cfdi.uuid_fiscal).where(Cfdi.empresa_id == empresa_id, Cfdi.clasificacion.in_(NO_DEDUCIBLES))
+        )
+    )
+
+
 def iva_periodo(db: Session, *, empresa_id: uuid.UUID, anio: int, mes: int | None) -> calculos.ResultadoIva:
     rep = pagado_rep_por_uuid(db, empresa_id=empresa_id)
     return calculos.iva_base_flujo(
@@ -63,14 +73,46 @@ def iva_periodo(db: Session, *, empresa_id: uuid.UUID, anio: int, mes: int | Non
         _con_pagos_manuales(db, empresa_id=empresa_id, base=rep),
         pagos_manuales=pagos_manuales_periodo(db, empresa_id=empresa_id, anio=anio, mes=mes),
         pagado_rep_por_uuid=rep,
+        uuids_no_deducibles=uuids_no_deducibles(db, empresa_id=empresa_id),
+    )
+
+
+NO_DEDUCIBLES = ("no_deducible", "deduccion_personal")
+
+
+def _deducible():
+    """Condición para que un gasto reste en el ISR: que el contador no lo haya
+    marcado como no deducible ni como deducción personal (esta última se aplica
+    en la anual, no en los pagos provisionales).
+
+    Un REP no se clasifica, así que se mira la factura PPD que liquida: si esa
+    está marcada como no deducible, el pago tampoco resta. Un REP que liquida
+    varias facturas y solo algunas no deducibles se excluye completo — es raro y
+    es preferible a deducir de más, pero conviene revisarlo si aparece.
+    """
+    factura_ppd = aliased(Cfdi)
+    liquida_no_deducible = (
+        select(CfdiPagoDocto.id)
+        .join(factura_ppd, factura_ppd.uuid_fiscal == CfdiPagoDocto.uuid_relacionado)
+        .where(CfdiPagoDocto.cfdi_pago_id == Cfdi.id, factura_ppd.clasificacion.in_(NO_DEDUCIBLES))
+        .correlate(Cfdi)
+        .exists()
+    )
+    return and_(
+        or_(Cfdi.clasificacion.is_(None), Cfdi.clasificacion.not_in(NO_DEDUCIBLES)),
+        or_(Cfdi.tipo != "pago", ~liquida_no_deducible),
     )
 
 
 def _por_mes(db: Session, *, empresa_id: uuid.UUID, anio: int, direccion: str, flujo: bool) -> dict[int, Decimal]:
     """Subtotal (sin IVA) por mes de ingresos (emitidos) o deducciones (recibidos).
     flujo=True: solo lo efectivamente cobrado/pagado (PUE + REP); False: todo lo
-    facturado vigente (ingresos nominales, PM general)."""
+    facturado vigente (ingresos nominales, PM general).
+
+    En los gastos se respeta la clasificación del contador: lo marcado como no
+    deducible o como deducción personal no entra."""
     mes_expr = extract("month", Cfdi.fecha)
+    solo_deducibles = [_deducible()] if direccion == "recibido" else []
     stmt = (
         select(mes_expr, func.coalesce(func.sum(Cfdi.subtotal), 0))
         .where(
@@ -79,6 +121,7 @@ def _por_mes(db: Session, *, empresa_id: uuid.UUID, anio: int, direccion: str, f
             Cfdi.direccion == direccion,
             Cfdi.estatus == "vigente",
             Cfdi.tipo.in_(("ingreso", "egreso", "pago", "nota_credito")),
+            *solo_deducibles,
         )
         .group_by(mes_expr)
     )
@@ -94,7 +137,7 @@ def _por_mes(db: Session, *, empresa_id: uuid.UUID, anio: int, direccion: str, f
     # Las notas de crédito restan (se suman aparte con signo negativo).
     stmt_nc = (
         select(mes_expr, func.coalesce(func.sum(Cfdi.subtotal), 0))
-        .where(Cfdi.empresa_id == empresa_id, extract("year", Cfdi.fecha) == anio, Cfdi.direccion == direccion, Cfdi.estatus == "vigente", Cfdi.tipo == "nota_credito")
+        .where(Cfdi.empresa_id == empresa_id, extract("year", Cfdi.fecha) == anio, Cfdi.direccion == direccion, Cfdi.estatus == "vigente", Cfdi.tipo == "nota_credito", *solo_deducibles)
         .group_by(mes_expr)
     )
     for m, v in db.execute(stmt_nc).all():
@@ -112,6 +155,7 @@ def _por_mes(db: Session, *, empresa_id: uuid.UUID, anio: int, direccion: str, f
                 Cfdi.estatus == "vigente",
                 Cfdi.tipo.in_(("ingreso", "egreso")),
                 Cfdi.metodo_pago_codigo == "PPD",
+                *solo_deducibles,
             )
             .group_by(mes_pm)
         )

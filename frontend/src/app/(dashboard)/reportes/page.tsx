@@ -5,6 +5,7 @@ import { Download } from "lucide-react";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { useEmpresa } from "@/components/empresa-provider";
+import { ReportesCfdi } from "@/components/reportes-cfdi";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -64,12 +65,19 @@ export default function ReportesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Reportes</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Reportes</h1>
+          <p className="text-sm text-muted-foreground">Reportes de CFDI para el papel de trabajo y análisis del periodo.</p>
+        </div>
         <Button variant="outline" onClick={exportar}>
-          <Download /> Exportar a Excel
+          <Download /> Exportar análisis
         </Button>
       </div>
+
+      <ReportesCfdi />
+
+      <h2 className="pt-2 text-lg font-semibold">Análisis</h2>
 
       <Card>
         <CardHeader>

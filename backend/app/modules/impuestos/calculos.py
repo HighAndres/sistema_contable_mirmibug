@@ -116,7 +116,18 @@ class ResultadoIva:
         return q2(self.trasladado_cobrado - self.acreditable_pagado)
 
 
-FILAS_IVA = ("PUE", "REP", "Pago manual", "Notas de crédito", "PPD pendiente", "No considerados")
+FILAS_IVA = ("PUE", "REP", "Pago manual", "Notas de crédito", "PPD pendiente", "No deducibles", "No considerados")
+
+
+def _no_deducible(c, uuids_no_deducibles: set[str]) -> bool:
+    """Gasto que el contador marcó como no deducible o como deducción personal:
+    su IVA no es acreditable. Un REP no se clasifica, así que se mira si liquida
+    alguna factura que sí esté marcada."""
+    if not getattr(c, "deducible", True):
+        return True
+    if getattr(c, "tipo", None) != "pago" or not uuids_no_deducibles:
+        return False
+    return any(d.uuid_relacionado in uuids_no_deducibles for d in getattr(c, "pagos_relacionados", ()) or ())
 
 
 def iva_base_flujo(
@@ -124,6 +135,7 @@ def iva_base_flujo(
     pagado_por_uuid: dict[str, tuple[Decimal, Decimal]] | None = None,
     pagos_manuales=(),
     pagado_rep_por_uuid: dict[str, tuple[Decimal, Decimal]] | None = None,
+    uuids_no_deducibles: set[str] | None = None,
 ) -> ResultadoIva:
     """`cfdis`: iterable con tipo, direccion, estatus, metodo_pago_codigo, subtotal, iva, uuid_fiscal.
     `pagado_por_uuid`: {uuid factura PPD: (importe pagado, IVA pagado)} según los
@@ -131,8 +143,11 @@ def iva_base_flujo(
     `pagos_manuales`: facturas PPD marcadas a mano como pagadas dentro del
     periodo; su IVA se reconoce ahí (fila "Pago manual"), como si fueran un REP.
     `pagado_rep_por_uuid`: igual que pagado_por_uuid pero SOLO con REP reales,
-    para no reconocer dos veces lo que un REP ya cubrió de una factura marcada."""
+    para no reconocer dos veces lo que un REP ya cubrió de una factura marcada.
+    `uuids_no_deducibles`: facturas marcadas como no deducibles o de deducción
+    personal, para que ni ellas ni los REP que las liquidan sean acreditables."""
     pagado_por_uuid = pagado_por_uuid or {}
+    uuids_no_deducibles = uuids_no_deducibles or set()
     pagado_rep_por_uuid = pagado_rep_por_uuid if pagado_rep_por_uuid is not None else pagado_por_uuid
     filas_e = {k: DesgloseIva(k) for k in FILAS_IVA}
     filas_r = {k: DesgloseIva(k) for k in FILAS_IVA}
@@ -148,6 +163,9 @@ def iva_base_flujo(
         filas = filas_e if c.direccion == "emitido" else filas_r
         if c.estatus != "vigente":
             suma(filas["No considerados"], c)
+        elif c.direccion == "recibido" and _no_deducible(c, uuids_no_deducibles):
+            # Se muestra aparte (el contador quiere verlo) pero no acredita.
+            suma(filas["No deducibles"], c)
         elif c.tipo == "pago":
             suma(filas["REP"], c)
         elif c.tipo == "nota_credito":
@@ -169,6 +187,8 @@ def iva_base_flujo(
         # Lo que ya cubrieron los REP reales no se vuelve a reconocer: solo el resto.
         pagado_rep, iva_rep = pagado_rep_por_uuid.get(getattr(c, "uuid_fiscal", ""), (Decimal("0"), Decimal("0")))
         filas = filas_e if c.direccion == "emitido" else filas_r
+        if c.direccion == "recibido" and _no_deducible(c, uuids_no_deducibles):
+            continue  # ya quedó contado en la fila "No deducibles" por su propia fecha
         base_resto = max(Decimal(c.subtotal) - (pagado_rep - iva_rep), Decimal("0"))
         iva_resto = max(Decimal(c.iva) - iva_rep, Decimal("0"))
         suma(filas["Pago manual"], c, base_resto, iva_resto)

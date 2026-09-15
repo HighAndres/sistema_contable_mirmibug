@@ -9,3 +9,12 @@ export function exportarExcel(nombreArchivo: string, hojas: Record<string, Recor
   }
   XLSX.writeFile(libro, `${nombreArchivo}.xlsx`);
 }
+
+/** Exporta una tabla ya armada (encabezados + filas) tal cual, sin reordenar ni
+ * renombrar columnas: los reportes del despacho dependen del orden exacto. */
+export function exportarTabla(nombreArchivo: string, nombreHoja: string, columnas: string[], filas: unknown[][]): void {
+  const libro = XLSX.utils.book_new();
+  const hoja = XLSX.utils.aoa_to_sheet([columnas, ...filas]);
+  XLSX.utils.book_append_sheet(libro, hoja, nombreHoja.slice(0, 31));
+  XLSX.writeFile(libro, `${nombreArchivo}.xlsx`);
+}

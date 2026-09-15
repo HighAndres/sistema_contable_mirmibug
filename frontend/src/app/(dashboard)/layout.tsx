@@ -45,24 +45,52 @@ interface NavItem {
   permisos: Permiso[];
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard, permisos: [] },
-  { href: "/cfdi", label: "CFDI", icon: Receipt, permisos: [PERM.CFDI_LEER] },
-  { href: "/inventario", label: "Inventario", icon: Package, permisos: [PERM.INVENTARIO_LEER] },
-  { href: "/pedimentos", label: "Pedimentos", icon: Ship, permisos: [PERM.PEDIMENTOS_LEER] },
-  { href: "/iva", label: "IVA", icon: Percent, permisos: [PERM.IMPUESTOS_LEER] },
-  { href: "/isr", label: "ISR", icon: Calculator, permisos: [PERM.IMPUESTOS_LEER] },
-  { href: "/conciliacion", label: "Conciliación", icon: Scale, permisos: [PERM.CONCILIACION_LEER] },
-  { href: "/clientes", label: "Clientes", icon: Contact, permisos: [PERM.TERCEROS_LEER] },
-  { href: "/proveedores", label: "Proveedores", icon: Truck, permisos: [PERM.TERCEROS_LEER] },
-  { href: "/reportes", label: "Reportes", icon: Banknote, permisos: [PERM.REPORTES_LEER] },
-  { href: "/bitacora", label: "Bitácora", icon: ClipboardList, permisos: [PERM.BITACORA_LEER] },
-  { href: "/usuarios", label: "Usuarios", icon: Users, permisos: [PERM.USUARIOS_LEER] },
-  { href: "/empresas", label: "Empresas", icon: Building2, permisos: [] },
+/** La navegación va por grupos: con 13 entradas planas ya no se distinguía lo
+ * fiscal de lo operativo ni de la administración. El grupo se oculta completo
+ * cuando el usuario no tiene permiso para ninguna de sus entradas. */
+interface NavGrupo {
+  titulo: string;
+  items: NavItem[];
+}
+
+const NAV_GRUPOS: NavGrupo[] = [
+  {
+    titulo: "General",
+    items: [
+      { href: "/", label: "Dashboard", icon: LayoutDashboard, permisos: [] },
+      { href: "/reportes", label: "Reportes", icon: Banknote, permisos: [PERM.REPORTES_LEER] },
+    ],
+  },
+  {
+    titulo: "Fiscal",
+    items: [
+      { href: "/cfdi", label: "CFDI", icon: Receipt, permisos: [PERM.CFDI_LEER] },
+      { href: "/iva", label: "IVA", icon: Percent, permisos: [PERM.IMPUESTOS_LEER] },
+      { href: "/isr", label: "ISR", icon: Calculator, permisos: [PERM.IMPUESTOS_LEER] },
+      { href: "/conciliacion", label: "Conciliación", icon: Scale, permisos: [PERM.CONCILIACION_LEER] },
+    ],
+  },
+  {
+    titulo: "Operación",
+    items: [
+      { href: "/inventario", label: "Inventario", icon: Package, permisos: [PERM.INVENTARIO_LEER] },
+      { href: "/pedimentos", label: "Pedimentos", icon: Ship, permisos: [PERM.PEDIMENTOS_LEER] },
+      { href: "/clientes", label: "Clientes", icon: Contact, permisos: [PERM.TERCEROS_LEER] },
+      { href: "/proveedores", label: "Proveedores", icon: Truck, permisos: [PERM.TERCEROS_LEER] },
+    ],
+  },
+  {
+    titulo: "Administración",
+    items: [
+      { href: "/empresas", label: "Empresas", icon: Building2, permisos: [] },
+      { href: "/usuarios", label: "Usuarios", icon: Users, permisos: [PERM.USUARIOS_LEER] },
+      { href: "/bitacora", label: "Bitácora", icon: ClipboardList, permisos: [PERM.BITACORA_LEER] },
+    ],
+  },
 ];
 
 interface SidebarContentProps {
-  items: NavItem[];
+  grupos: NavGrupo[];
   pathname: string;
   user: Usuario;
   empresaActiva: MiEmpresa | null;
@@ -70,30 +98,35 @@ interface SidebarContentProps {
   onLogout: () => void;
 }
 
-function SidebarContent({ items, pathname, user, empresaActiva, onNavigate, onLogout }: SidebarContentProps) {
+function SidebarContent({ grupos, pathname, user, empresaActiva, onNavigate, onLogout }: SidebarContentProps) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex h-14 items-center px-4 text-lg font-semibold text-primary">Nubinox</div>
       <Separator />
-      <nav className="flex-1 space-y-1 p-3">
-        {items.map((item) => {
-          const activo = pathname === item.href;
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onNavigate}
-              className={cn(
-                "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                activo ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {item.label}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 space-y-4 overflow-y-auto p-3">
+        {grupos.map((grupo) => (
+          <div key={grupo.titulo} className="space-y-1">
+            <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground/70">{grupo.titulo}</p>
+            {grupo.items.map((item) => {
+              const activo = pathname === item.href;
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={onNavigate}
+                  className={cn(
+                    "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                    activo ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
       <Separator />
       <div className="space-y-3 p-3">
@@ -141,7 +174,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (authLoading || !user) return null;
 
   const permisos = empresaActiva?.permisos ?? [];
-  const visibleItems = NAV_ITEMS.filter((item) => canAny(permisos, item.permisos));
+  const visibleGrupos = NAV_GRUPOS.map((g) => ({ ...g, items: g.items.filter((item) => canAny(permisos, item.permisos)) })).filter(
+    (g) => g.items.length > 0,
+  );
 
   function handleLogout() {
     logout();
@@ -152,7 +187,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="flex min-h-dvh">
       <aside className="hidden w-60 shrink-0 border-r bg-card lg:block">
         <SidebarContent
-          items={visibleItems}
+          grupos={visibleGrupos}
           pathname={pathname}
           user={user}
           empresaActiva={empresaActiva}
@@ -164,7 +199,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <DialogContent className="left-0 top-0 h-dvh w-72 max-w-[85vw] translate-x-0 translate-y-0 rounded-none border-r p-0 data-[state=open]:slide-in-from-left data-[state=closed]:slide-out-to-left">
           <DialogTitle className="sr-only">Menú de navegación</DialogTitle>
           <SidebarContent
-            items={visibleItems}
+            grupos={visibleGrupos}
             pathname={pathname}
             user={user}
             empresaActiva={empresaActiva}

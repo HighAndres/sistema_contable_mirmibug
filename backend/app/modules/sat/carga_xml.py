@@ -14,7 +14,15 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.modules.cfdi.models import Cfdi, CfdiConcepto, CfdiPagoDocto
+from app.modules.cfdi.models import (
+    Cfdi,
+    CfdiConcepto,
+    CfdiImpuesto,
+    CfdiNomina,
+    CfdiNominaConcepto,
+    CfdiPagoDocto,
+    CfdiRelacionado,
+)
 from app.modules.rules import crud as rules_crud
 from app.modules.sat.xml_parser import CfdiXml, XmlCfdiError, extraer_xmls, parse_cfdi_xml
 from app.modules.tenants.models import Empresa
@@ -70,6 +78,21 @@ def guardar_cfdi(db: Session, *, empresa: Empresa, x: CfdiXml, origen: str = "xm
         forma_pago_codigo=x.forma_pago_codigo,
         metodo_pago_codigo=x.metodo_pago_codigo if x.tipo_comprobante in ("I", "E") else None,
         uso_cfdi_codigo=x.uso_cfdi_codigo,
+        moneda=x.moneda[:3] if x.moneda else None,
+        tipo_cambio=x.tipo_cambio,
+        descuento=q2(x.descuento),
+        regimen_emisor=x.regimen_emisor,
+        regimen_receptor=x.regimen_receptor,
+        lugar_expedicion=(x.lugar_expedicion or None) and x.lugar_expedicion[:10],
+        domicilio_receptor=(x.domicilio_receptor or None) and x.domicilio_receptor[:10],
+        exportacion=(x.exportacion or None) and x.exportacion[:10],
+        condiciones_pago=(x.condiciones_pago or None) and x.condiciones_pago[:80],
+        pac_rfc=(x.pac_rfc or None) and x.pac_rfc[:13],
+        cuenta_predial=(x.cuenta_predial or None) and x.cuenta_predial[:150],
+        complementos=", ".join(x.complementos)[:255] or None,
+        global_periodicidad=x.global_periodicidad,
+        global_meses=x.global_meses,
+        global_anio=x.global_anio,
         subtotal=q2(subtotal),
         iva=q2(iva),
         total=q2(total),
@@ -87,9 +110,68 @@ def guardar_cfdi(db: Session, *, empresa: Empresa, x: CfdiXml, origen: str = "xm
                 descripcion=c.descripcion or "(sin descripción)",
                 cantidad=float(c.cantidad),
                 unidad_codigo=c.unidad_codigo,
+                clave_prodserv=(c.clave_prodserv or None) and c.clave_prodserv[:15],
                 valor_unitario=c.valor_unitario,
                 importe=c.importe,
             )
+        )
+    for i in x.impuestos:
+        cfdi.impuestos.append(
+            CfdiImpuesto(
+                naturaleza=i.naturaleza,
+                impuesto=i.impuesto[:10],
+                tipo_factor=i.tipo_factor,
+                tasa=i.tasa,
+                base=q2(i.base),
+                importe=q2(i.importe),
+                nombre_local=(i.nombre_local or None) and i.nombre_local[:60],
+            )
+        )
+    for r in x.relacionados:
+        cfdi.relacionados.append(CfdiRelacionado(tipo_relacion=r.tipo_relacion, uuid_relacionado=r.uuid))
+    if x.nomina is not None:
+        n = x.nomina
+        cfdi.nomina = CfdiNomina(
+            version=n.version,
+            tipo_nomina=n.tipo_nomina,
+            fecha_pago=n.fecha_pago,
+            fecha_inicial_pago=n.fecha_inicial_pago,
+            fecha_final_pago=n.fecha_final_pago,
+            num_dias_pagados=n.num_dias_pagados,
+            total_percepciones=q2(n.total_percepciones),
+            total_deducciones=q2(n.total_deducciones),
+            total_otros_pagos=q2(n.total_otros_pagos),
+            registro_patronal=n.registro_patronal,
+            curp_emisor=n.curp_emisor,
+            curp_receptor=n.curp_receptor,
+            num_seguridad_social=n.num_seguridad_social,
+            fecha_inicio_rel_laboral=n.fecha_inicio_rel_laboral,
+            antiguedad=n.antiguedad,
+            tipo_contrato=n.tipo_contrato,
+            sindicalizado=n.sindicalizado,
+            tipo_jornada=n.tipo_jornada,
+            tipo_regimen=n.tipo_regimen,
+            num_empleado=n.num_empleado,
+            departamento=(n.departamento or None) and n.departamento[:100],
+            puesto=(n.puesto or None) and n.puesto[:100],
+            riesgo_puesto=n.riesgo_puesto,
+            periodicidad_pago=n.periodicidad_pago,
+            banco=n.banco,
+            cuenta_bancaria=n.cuenta_bancaria,
+            salario_base_cot_apor=n.salario_base_cot_apor,
+            salario_diario_integrado=n.salario_diario_integrado,
+            clave_ent_fed=n.clave_ent_fed,
+            conceptos=[
+                CfdiNominaConcepto(
+                    grupo=c.grupo,
+                    tipo_codigo=c.tipo_codigo,
+                    clave=(c.clave or None) and c.clave[:15],
+                    concepto=c.concepto or "(sin concepto)",
+                    gravado=q2(c.gravado),
+                    exento=q2(c.exento),
+                )
+                for c in n.conceptos
+            ],
         )
     for p in x.pagos:
         cfdi.pagos_relacionados.append(
