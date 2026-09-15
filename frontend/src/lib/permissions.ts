@@ -15,6 +15,7 @@ export const PERM = {
   CREDENCIALES_GESTIONAR: "credenciales.gestionar",
   SAT_SINCRONIZAR: "sat.sincronizar",
   CFDI_LEER: "cfdi.leer",
+  CFDI_EDITAR: "cfdi.editar",
   REPORTES_LEER: "reportes.leer",
   IMPUESTOS_LEER: "impuestos.leer",
   CONCILIACION_LEER: "conciliacion.leer",

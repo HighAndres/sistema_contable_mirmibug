@@ -57,6 +57,13 @@ export interface Empresa {
   activo: boolean;
 }
 
+export interface RegimenFiscal {
+  codigo: string;
+  nombre: string;
+  tipos_persona: ("fisica" | "moral")[];
+  mecanica_isr: "pm_general" | "pm_resico" | "pf_resico" | "pf_actividad" | "resico" | "no_aplica";
+}
+
 export interface MiEmpresa {
   empresa: Empresa;
   rol: string;
@@ -122,7 +129,15 @@ export interface Cfdi {
   origen: "mock" | "xml" | "descarga";
   iva_retenido: number;
   isr_retenido: number;
+  /** Pago registrado a mano (solo facturas PPD sin REP ni movimiento bancario). */
+  pago_manual_fecha: string | null;
+  pago_manual_nota: string | null;
+  /** Derivado: estado de cobro/pago de la factura; null en REP, nómina y notas de crédito. */
+  estado_pago: EstadoPago | null;
+  pagado_rep: number;
 }
+
+export type EstadoPago = "pagada" | "parcial" | "pendiente";
 
 export interface PagoDocto {
   cfdi_pago_id: string;
@@ -473,7 +488,20 @@ export interface CuentaBancaria {
   activo: boolean;
 }
 
-export type EstadoMovimientoBanco = "pendiente" | "conciliado" | "ignorado";
+export type EstadoMovimientoBanco = "pendiente" | "parcial" | "conciliado" | "ignorado";
+
+/** Un CFDI aplicado a un movimiento bancario y con cuánto (1:N y N:1). */
+export interface LigaConciliacion {
+  cfdi_id: string;
+  uuid_fiscal: string;
+  tipo: string;
+  serie_folio: string | null;
+  fecha: string;
+  nombre_contraparte: string;
+  rfc_contraparte: string;
+  total: number;
+  importe: number;
+}
 
 export interface MovimientoBanco {
   id: string;
@@ -488,10 +516,11 @@ export interface MovimientoBanco {
   estado: EstadoMovimientoBanco;
   conciliado_por: "auto" | "manual" | null;
   nota: string | null;
-  cfdi_id: string | null;
+  ligas: LigaConciliacion[];
+  importe_ligado: number;
+  restante: number;
   cfdi_uuid: string | null;
   cfdi_nombre: string | null;
-  cfdi_total: number | null;
   archivo_nombre: string | null;
   created_at: string;
 }
@@ -516,19 +545,46 @@ export interface AutoConciliarResponse {
   conciliados: number;
   sin_coincidencia: number;
   ambiguos: number;
+  con_sugerencias: number;
 }
+
+/** exacto · similar (comisión/redondeo) · parcial (CFDI mayor, N:1) · menor (CFDI menor, combinable 1:N) */
+export type CoincidenciaCfdi = "exacto" | "similar" | "parcial" | "menor";
 
 export interface CandidatoCfdi {
   cfdi_id: string;
   uuid_fiscal: string;
   tipo: string;
   direccion: string;
+  metodo_pago: string | null;
+  serie_folio: string | null;
   fecha: string;
   nombre_contraparte: string;
   rfc_contraparte: string;
   total: number;
+  pagado_rep: number;
+  ligado_otros: number;
+  saldo: number;
   diferencia: number;
   dias: number;
+  pagado_despues: boolean;
+  coincidencia: CoincidenciaCfdi;
+  contraparte_en_concepto: boolean;
+  importe_sugerido: number;
+}
+
+export interface CombinacionCfdi {
+  cfdi_ids: string[];
+  rfc_contraparte: string;
+  nombre_contraparte: string;
+  total: number;
+  diferencia: number;
+}
+
+export interface CandidatosResponse {
+  movimiento: { id: string; fecha: string; monto: number; importe_ligado: number; restante: number };
+  candidatos: CandidatoCfdi[];
+  combinaciones: CombinacionCfdi[];
 }
 
 export interface Declaracion {
@@ -562,6 +618,7 @@ export interface ResumenConciliacion {
     abonos_conciliados: number;
     cargos_conciliados: number;
     pendientes: number;
+    parciales: number;
     conciliados: number;
     ignorados: number;
     porcentaje_conciliado: number;

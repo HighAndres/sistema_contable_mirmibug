@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CfdiConceptoRead(BaseModel):
@@ -41,6 +41,18 @@ class CfdiRead(BaseModel):
     origen: str = "mock"
     iva_retenido: float = 0
     isr_retenido: float = 0
+    # Pago registrado a mano (solo facturas PPD).
+    pago_manual_fecha: date | None = None
+    pago_manual_nota: str | None = None
+    # Derivados (no están en la tabla): estado de cobro/pago de la factura y
+    # lo cubierto por REP. None en REP, nómina y notas de crédito.
+    estado_pago: str | None = None  # pagada | parcial | pendiente
+    pagado_rep: float = 0
+
+
+class PagoManualRequest(BaseModel):
+    fecha: date
+    nota: str | None = Field(default=None, max_length=255)
 
 
 class PagoDoctoRead(BaseModel):

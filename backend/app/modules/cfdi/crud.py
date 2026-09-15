@@ -2,13 +2,26 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import Select, extract, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import Select, and_, extract, func, or_, select
+from sqlalchemy.orm import Session, aliased
 
-from app.modules.cfdi.models import Cfdi
+from app.modules.cfdi.models import Cfdi, CfdiPagoDocto
 
 TIPOS = ("ingreso", "egreso", "pago", "nomina", "nota_credito")
 ESTATUS = ("vigente", "cancelado", "en_proceso")
+ESTADOS_PAGO = ("pagada", "pendiente")
+
+
+def _pagado_rep_subquery(empresa_id: uuid.UUID):
+    """Suma de lo pagado por REP vigentes a la factura de la fila (correlacionado por UUID)."""
+    rep = aliased(Cfdi)
+    return (
+        select(func.coalesce(func.sum(CfdiPagoDocto.imp_pagado), 0))
+        .join(rep, rep.id == CfdiPagoDocto.cfdi_pago_id)
+        .where(rep.empresa_id == empresa_id, rep.estatus == "vigente", CfdiPagoDocto.uuid_relacionado == Cfdi.uuid_fiscal)
+        .correlate(Cfdi)
+        .scalar_subquery()
+    )
 
 
 def get(db: Session, *, empresa_id: uuid.UUID, cfdi_id: uuid.UUID) -> Cfdi | None:
@@ -32,6 +45,7 @@ def _aplicar_filtros(
     forma_pago: str | None = None,
     uuid_fiscal: str | None = None,
     q: str | None = None,
+    estado_pago: str | None = None,
 ) -> Select:
     stmt = stmt.where(Cfdi.empresa_id == empresa_id)
     if tipo:
@@ -60,6 +74,19 @@ def _aplicar_filtros(
         stmt = stmt.where(Cfdi.forma_pago_codigo == forma_pago)
     if uuid_fiscal:
         stmt = stmt.where(Cfdi.uuid_fiscal.ilike(f"%{uuid_fiscal.strip()}%"))
+    if estado_pago:
+        # Solo aplica a facturas (ingreso/egreso). Una PPD está pagada si se
+        # marcó a mano o si los REP cubren el total; PUE se considera pagada
+        # al emitirse. Pendiente = PPD vigente sin ninguna de las dos cosas.
+        es_factura = Cfdi.tipo.in_(("ingreso", "egreso"))
+        ppd_pagada = and_(
+            Cfdi.metodo_pago_codigo == "PPD",
+            or_(Cfdi.pago_manual_fecha.is_not(None), _pagado_rep_subquery(empresa_id) >= Cfdi.total),
+        )
+        if estado_pago == "pagada":
+            stmt = stmt.where(es_factura, Cfdi.estatus != "cancelado", or_(Cfdi.metodo_pago_codigo != "PPD", ppd_pagada))
+        elif estado_pago == "pendiente":
+            stmt = stmt.where(es_factura, Cfdi.estatus == "vigente", Cfdi.metodo_pago_codigo == "PPD", ~ppd_pagada)
     if q:
         # Búsqueda libre: UUID, serie/folio, RFC o nombre de cualquiera de las partes.
         like = f"%{q.strip()}%"
@@ -136,3 +163,64 @@ def anios_disponibles(db: Session, *, empresa_id: uuid.UUID) -> list[int]:
         select(extract("year", Cfdi.fecha)).where(Cfdi.empresa_id == empresa_id).distinct().order_by(extract("year", Cfdi.fecha).desc())
     ).all()
     return [int(a) for a in filas]
+
+
+def pagado_rep_de(db: Session, *, empresa_id: uuid.UUID, uuids: list[str]) -> dict[str, Decimal]:
+    """{uuid factura: importe pagado por REP vigentes} solo para los UUID dados
+    (una consulta para toda la página de resultados)."""
+    if not uuids:
+        return {}
+    rep = aliased(Cfdi)
+    filas = db.execute(
+        select(CfdiPagoDocto.uuid_relacionado, func.coalesce(func.sum(CfdiPagoDocto.imp_pagado), 0))
+        .join(rep, rep.id == CfdiPagoDocto.cfdi_pago_id)
+        .where(rep.empresa_id == empresa_id, rep.estatus == "vigente", CfdiPagoDocto.uuid_relacionado.in_(uuids))
+        .group_by(CfdiPagoDocto.uuid_relacionado)
+    ).all()
+    return {u: Decimal(p) for u, p in filas}
+
+
+def estado_pago_de(cfdi: Cfdi, pagado_rep: Decimal) -> str | None:
+    """pagada | parcial | pendiente para facturas; None para REP, nómina y notas
+    de crédito. Una PUE cuenta como pagada al emitirse."""
+    if cfdi.tipo not in ("ingreso", "egreso"):
+        return None
+    if cfdi.metodo_pago_codigo != "PPD" or cfdi.pagada_manualmente:
+        return "pagada"
+    if pagado_rep >= Decimal(cfdi.total) and cfdi.total > 0:
+        return "pagada"
+    return "parcial" if pagado_rep > 0 else "pendiente"
+
+
+def marcar_pago_manual(db: Session, *, cfdi: Cfdi, fecha: date, nota: str | None, usuario_id: uuid.UUID, pagado_rep: Decimal) -> Cfdi:
+    """Marca una factura PPD vigente como pagada/cobrada a mano.
+
+    Lanza ValueError si no es una factura PPD vigente o si los REP ya la
+    cubren por completo (en ese caso no hay nada que marcar)."""
+    if cfdi.tipo not in ("ingreso", "egreso"):
+        raise ValueError("Solo se pueden marcar facturas de ingreso o gasto")
+    if cfdi.metodo_pago_codigo != "PPD":
+        raise ValueError("Una factura PUE ya cuenta como pagada al emitirse; solo aplica a PPD")
+    if cfdi.estatus != "vigente":
+        raise ValueError("La factura no está vigente")
+    if pagado_rep >= Decimal(cfdi.total) and cfdi.total > 0:
+        raise ValueError("Los complementos de pago ya cubren el total de la factura")
+    if fecha < cfdi.fecha:
+        raise ValueError("La fecha de pago no puede ser anterior a la fecha de la factura")
+    cfdi.pago_manual_fecha = fecha
+    cfdi.pago_manual_nota = (nota or "").strip() or None
+    cfdi.pago_manual_usuario_id = usuario_id
+    db.commit()
+    db.refresh(cfdi)
+    return cfdi
+
+
+def quitar_pago_manual(db: Session, *, cfdi: Cfdi) -> Cfdi:
+    if not cfdi.pagada_manualmente:
+        raise ValueError("La factura no tiene un pago registrado a mano")
+    cfdi.pago_manual_fecha = None
+    cfdi.pago_manual_nota = None
+    cfdi.pago_manual_usuario_id = None
+    db.commit()
+    db.refresh(cfdi)
+    return cfdi

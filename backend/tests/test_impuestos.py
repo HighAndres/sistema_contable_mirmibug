@@ -123,7 +123,7 @@ def test_endpoints_iva_isr_y_configuracion(client, seed_rbac, db):
     assert iva.status_code == 200, iva.text
     b = iva.json()
     assert b["saldo"] == round(b["trasladado_cobrado"] - b["acreditable_pagado"], 2)
-    assert {f["concepto"] for f in b["emitidas"]} == {"PUE", "REP", "Notas de crédito", "PPD pendiente", "No considerados"}
+    assert {f["concepto"] for f in b["emitidas"]} == {"PUE", "REP", "Pago manual", "Notas de crédito", "PPD pendiente", "No considerados"}
     anual = client.get(f"/api/v1/impuestos/iva?anio={hoy.year}", headers=headers).json()
     assert anual["mes"] is None and anual["trasladado_cobrado"] >= b["trasladado_cobrado"]
 
@@ -147,6 +147,9 @@ def test_endpoints_iva_isr_y_configuracion(client, seed_rbac, db):
     # Cambiar a RESICO → mecánica pm_resico (flujo)
     client.put("/api/v1/impuestos/configuracion", headers=headers, json={"regimen_fiscal_codigo": "626"})
     assert client.get(f"/api/v1/impuestos/isr?anio={hoy.year}", headers=headers).json()["mecanica"] == "pm_resico"
+    # Un régimen de persona física no se acepta para un RFC de persona moral
+    malo = client.put("/api/v1/impuestos/configuracion", headers=headers, json={"regimen_fiscal_codigo": "612"})
+    assert malo.status_code == 400 and "no aplica" in malo.text
 
 
 def test_persona_fisica_por_rfc_de_13(client, seed_rbac, db):

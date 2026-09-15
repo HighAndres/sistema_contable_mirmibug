@@ -46,20 +46,52 @@ class MovimientoBancario(UUIDPKMixin, TimestampMixin, Base):
     fila_origen: Mapped[int | None] = mapped_column(Integer)
     archivo_nombre: Mapped[str | None] = mapped_column(String(120))
 
-    # pendiente | conciliado | ignorado
+    # pendiente | parcial (ligado en parte, falta importe) | conciliado | ignorado
     estado: Mapped[str] = mapped_column(String(12), default="pendiente", server_default="pendiente", index=True, nullable=False)
-    cfdi_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("cfdis.id", ondelete="SET NULL"), index=True)
     # auto | manual — cómo se concilió
     conciliado_por: Mapped[str | None] = mapped_column(String(10))
     nota: Mapped[str | None] = mapped_column(String(255))
 
     cuenta: Mapped[CuentaBancaria] = relationship(lazy="selectin")
-    cfdi = relationship("Cfdi", lazy="selectin")
+    # Un movimiento puede pagar varios CFDI (1:N) y un CFDI puede cobrarse con
+    # varios movimientos (N:1): la relación vive en `conciliacion_ligas`.
+    ligas: Mapped[list["LigaConciliacion"]] = relationship(
+        back_populates="movimiento", cascade="all, delete-orphan", lazy="selectin", order_by="LigaConciliacion.created_at"
+    )
 
     @property
     def importe(self) -> Decimal:
         """Con signo: abono positivo, cargo negativo."""
         return Decimal(self.abono or 0) - Decimal(self.cargo or 0)
+
+    @property
+    def monto(self) -> Decimal:
+        """Sin signo: lo que hay que explicar con CFDI."""
+        return abs(self.importe)
+
+    @property
+    def importe_ligado(self) -> Decimal:
+        return sum((Decimal(l.importe) for l in self.ligas), Decimal("0"))
+
+    @property
+    def restante(self) -> Decimal:
+        return self.monto - self.importe_ligado
+
+
+class LigaConciliacion(UUIDPKMixin, TimestampMixin, Base):
+    """Cuánto de un movimiento bancario se aplica a un CFDI. La suma de ligas de
+    un movimiento no puede superar su monto; la suma de ligas de un CFDI (más lo
+    pagado por REP) no puede superar el total del CFDI."""
+
+    __tablename__ = "conciliacion_ligas"
+    __table_args__ = (UniqueConstraint("movimiento_id", "cfdi_id", name="uq_liga_movimiento_cfdi"),)
+
+    movimiento_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("movimientos_bancarios.id", ondelete="CASCADE"), index=True, nullable=False)
+    cfdi_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("cfdis.id", ondelete="CASCADE"), index=True, nullable=False)
+    importe: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+
+    movimiento: Mapped[MovimientoBancario] = relationship(back_populates="ligas")
+    cfdi = relationship("Cfdi", lazy="selectin")
 
 
 class DeclaracionPeriodo(UUIDPKMixin, TimestampMixin, Base):

@@ -12,10 +12,12 @@ def test_crear_empresa_hace_al_creador_administrador(client, seed_rbac, db):
     res = client.post(
         "/api/v1/tenants/empresas",
         headers=headers,
-        json={"rfc": "FUN010101AB1", "razon_social": "Fundador SA de CV"},
+        json={"rfc": "FUN010101AB1", "razon_social": "Fundador SA de CV", "regimen_fiscal_codigo": "601", "coeficiente_utilidad": "0.1234"},
     )
     assert res.status_code == 201, res.text
     empresa_id = res.json()["id"]
+    assert res.json()["tipo_persona"] == "moral" and res.json()["regimen_fiscal_codigo"] == "601"
+    assert res.json()["coeficiente_utilidad"] == 0.1234
 
     mias = client.get("/api/v1/tenants/empresas/mias", headers=headers)
     assert mias.status_code == 200
@@ -24,6 +26,34 @@ def test_crear_empresa_hace_al_creador_administrador(client, seed_rbac, db):
     assert membresias[0]["empresa"]["id"] == empresa_id
     assert membresias[0]["rol"] == "administrador"
     assert "cfdi.leer" in membresias[0]["permisos"]
+
+
+def test_alta_de_empresa_exige_regimen_coherente_con_el_rfc(client, seed_rbac, db):
+    """El régimen es obligatorio y debe aplicar al tipo de persona que define el RFC."""
+    usuario = crear_usuario(db)
+    headers = auth_headers(client, email=usuario.email, password="Demo1234!")
+    post = lambda body: client.post("/api/v1/tenants/empresas", headers=headers, json=body)  # noqa: E731
+
+    assert post({"rfc": "FUN010101AB1", "razon_social": "Sin régimen"}).status_code == 422
+    assert post({"rfc": "FUN010101AB1", "razon_social": "Régimen inexistente", "regimen_fiscal_codigo": "999"}).status_code == 422
+    # 612 es solo de personas físicas; un RFC de 12 es persona moral
+    res = post({"rfc": "FUN010101AB1", "razon_social": "PM con régimen de PF", "regimen_fiscal_codigo": "612"})
+    assert res.status_code == 422 and "no aplica a una persona moral" in res.text
+    # RFC mal formado
+    assert post({"rfc": "FUNDADOR-1", "razon_social": "RFC malo", "regimen_fiscal_codigo": "601"}).status_code == 422
+    # PF con 612 (y RFC en minúsculas, se normaliza)
+    res = post({"rfc": "lorm850312mn1", "razon_social": "Luis Ortiz", "regimen_fiscal_codigo": "612"})
+    assert res.status_code == 201, res.text
+    assert res.json()["rfc"] == "LORM850312MN1" and res.json()["tipo_persona"] == "fisica"
+
+    # Catálogo filtrado por tipo de persona, sin necesidad de empresa activa
+    fis = client.get("/api/v1/tenants/regimenes?tipo_persona=fisica", headers=headers).json()
+    mor = client.get("/api/v1/tenants/regimenes?tipo_persona=moral", headers=headers).json()
+    assert {r["codigo"] for r in fis} >= {"605", "612", "626"} and "601" not in {r["codigo"] for r in fis}
+    assert {r["codigo"] for r in mor} >= {"601", "603", "626"} and "612" not in {r["codigo"] for r in mor}
+    assert next(r for r in mor if r["codigo"] == "601")["mecanica_isr"] == "pm_general"
+    todos = client.get("/api/v1/tenants/regimenes", headers=headers).json()
+    assert len(todos) == 19
 
 
 def test_usuario_sin_membresia_no_accede_a_otra_empresa(client, seed_rbac, db):

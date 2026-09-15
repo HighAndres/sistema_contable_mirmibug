@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -7,6 +7,7 @@ from app.api.deps import EmpresaContext, get_current_active_user, require_permis
 from app.db.session import get_db
 from app.modules.auth.models import Permiso, Usuario
 from app.modules.bitacora import crud as bitacora_crud
+from app.modules.impuestos.regimenes import regimenes_para
 from app.modules.tenants import crud
 from app.modules.tenants.schemas import (
     EmpresaCreate,
@@ -15,6 +16,7 @@ from app.modules.tenants.schemas import (
     InvitarUsuarioResponse,
     MiEmpresaRead,
     MiembroEmpresaRead,
+    RegimenFiscalRead,
 )
 
 router = APIRouter(prefix="/tenants", tags=["tenants"])
@@ -41,6 +43,19 @@ def mis_empresas(
     ]
 
 
+@router.get("/regimenes", response_model=list[RegimenFiscalRead])
+def listar_regimenes(
+    tipo_persona: str | None = Query(default=None, pattern="^(fisica|moral)$"),
+    _current_user: Usuario = Depends(get_current_active_user),
+) -> list[RegimenFiscalRead]:
+    """Catálogo c_RegimenFiscal con el tipo de persona al que aplica y la
+    mecánica de ISR. No requiere empresa activa: se usa desde el alta."""
+    return [
+        RegimenFiscalRead(codigo=r.codigo, nombre=r.nombre, tipos_persona=r.tipos_persona, mecanica_isr=r.mecanica_isr)
+        for r in regimenes_para(tipo_persona)
+    ]
+
+
 @router.post("/empresas", response_model=EmpresaRead, status_code=status.HTTP_201_CREATED)
 def crear_empresa(
     payload: EmpresaCreate,
@@ -54,6 +69,7 @@ def crear_empresa(
             rfc=payload.rfc,
             razon_social=payload.razon_social,
             regimen_fiscal_codigo=payload.regimen_fiscal_codigo,
+            coeficiente_utilidad=payload.coeficiente_utilidad,
         )
     except IntegrityError:
         db.rollback()
@@ -64,7 +80,7 @@ def crear_empresa(
         empresa_id=empresa.id,
         usuario=current_user,
         accion="empresa.creada",
-        descripcion=f"Empresa {empresa.razon_social} ({empresa.rfc}) creada",
+        descripcion=f"Empresa {empresa.razon_social} ({empresa.rfc}) creada · régimen {empresa.regimen_fiscal_codigo}",
         entidad_tipo="empresa",
         entidad_id=empresa.id,
     )

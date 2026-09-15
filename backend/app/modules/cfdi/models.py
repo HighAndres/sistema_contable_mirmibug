@@ -2,6 +2,9 @@
 
 Los datos son generados/sincronizados (reales o simulados vía el módulo sat),
 nunca capturados a mano: por eso no hay endpoints de creación manual aquí.
+Lo único que se edita a mano es la marca de "pagada" de una factura PPD
+(pago_manual_*), para los casos reales en que no existe complemento de pago
+ni movimiento bancario identificable y aun así debe contar en impuestos.
 """
 
 from __future__ import annotations
@@ -60,6 +63,13 @@ class Cfdi(UUIDPKMixin, TimestampMixin, Base):
     iva_retenido: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, server_default="0", nullable=False)
     isr_retenido: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, server_default="0", nullable=False)
 
+    # Pago registrado A MANO por el contador (factura PPD sin REP ni movimiento
+    # bancario). Con fecha ≠ nulo la factura cuenta como cobrada/pagada en esa
+    # fecha para IVA base flujo, ISR en flujo, saldos de terceros y reportes.
+    pago_manual_fecha: Mapped[date | None] = mapped_column(Date, index=True)
+    pago_manual_nota: Mapped[str | None] = mapped_column(String(255))
+    pago_manual_usuario_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("usuarios.id", ondelete="SET NULL"))
+
     pagos_relacionados: Mapped[list["CfdiPagoDocto"]] = relationship(
         back_populates="cfdi_pago", cascade="all, delete-orphan", lazy="selectin"
     )
@@ -67,6 +77,10 @@ class Cfdi(UUIDPKMixin, TimestampMixin, Base):
     conceptos: Mapped[list["CfdiConcepto"]] = relationship(
         back_populates="cfdi", cascade="all, delete-orphan", lazy="selectin"
     )
+
+    @property
+    def pagada_manualmente(self) -> bool:
+        return self.pago_manual_fecha is not None
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Cfdi {self.uuid_fiscal}>"

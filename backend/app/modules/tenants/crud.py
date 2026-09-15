@@ -1,6 +1,7 @@
 import secrets
 import uuid
 from dataclasses import dataclass
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -85,7 +86,13 @@ def invitar_usuario(
 
 
 def create_empresa_con_admin(
-    db: Session, *, usuario_id: uuid.UUID, rfc: str, razon_social: str, regimen_fiscal_codigo: str | None
+    db: Session,
+    *,
+    usuario_id: uuid.UUID,
+    rfc: str,
+    razon_social: str,
+    regimen_fiscal_codigo: str | None,
+    coeficiente_utilidad: Decimal | None = None,
 ) -> Empresa:
     """Crea la empresa y hace al creador su 'administrador' en una sola transacción."""
     rol_admin = db.scalar(select(Rol).where(Rol.nombre == "administrador"))
@@ -96,6 +103,7 @@ def create_empresa_con_admin(
         rfc=rfc.upper(),
         razon_social=razon_social,
         regimen_fiscal_codigo=regimen_fiscal_codigo,
+        coeficiente_utilidad=coeficiente_utilidad,
     )
     db.add(empresa)
     db.flush()

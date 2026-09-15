@@ -14,6 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 
+from app.modules.impuestos.regimenes import mecanica_isr
+
 _Q2 = Decimal("0.01")
 
 
@@ -52,24 +54,12 @@ TASAS_RESICO_PF: list[tuple[Decimal, Decimal]] = [
     (Decimal("3500000.00"), Decimal("0.0250")),
 ]
 
-REGIMENES_PM_GENERAL = {"601", "603"}
-REGIMENES_RESICO = {"626"}
-REGIMENES_PF_ACTIVIDAD = {"612", "606", "621"}  # actividad empresarial/profesional, arrendamiento, RIF
-
 
 def clasificar_regimen(*, tipo_persona: str, regimen_codigo: str | None) -> str:
     """Devuelve la 'mecánica' de ISR aplicable:
-    pm_general | pm_resico | pf_resico | pf_actividad | no_aplica"""
-    codigo = (regimen_codigo or "").strip()
-    if codigo in REGIMENES_RESICO:
-        return "pf_resico" if tipo_persona == "fisica" else "pm_resico"
-    if tipo_persona == "moral":
-        return "pm_general"
-    if codigo in REGIMENES_PF_ACTIVIDAD or not codigo:
-        return "pf_actividad"
-    if codigo == "605":  # sueldos y salarios: el ISR lo retiene el patrón
-        return "no_aplica"
-    return "pf_actividad"
+    pm_general | pm_resico | pf_resico | pf_actividad | no_aplica.
+    La tabla régimen → mecánica vive en regimenes.py (fuente única)."""
+    return mecanica_isr(tipo_persona=tipo_persona, regimen_codigo=regimen_codigo)
 
 
 def isr_tarifa_art96(base: Decimal, *, meses: int = 1) -> Decimal:
@@ -126,14 +116,24 @@ class ResultadoIva:
         return q2(self.trasladado_cobrado - self.acreditable_pagado)
 
 
-FILAS_IVA = ("PUE", "REP", "Notas de crédito", "PPD pendiente", "No considerados")
+FILAS_IVA = ("PUE", "REP", "Pago manual", "Notas de crédito", "PPD pendiente", "No considerados")
 
 
-def iva_base_flujo(cfdis, pagado_por_uuid: dict[str, tuple[Decimal, Decimal]] | None = None) -> ResultadoIva:
+def iva_base_flujo(
+    cfdis,
+    pagado_por_uuid: dict[str, tuple[Decimal, Decimal]] | None = None,
+    pagos_manuales=(),
+    pagado_rep_por_uuid: dict[str, tuple[Decimal, Decimal]] | None = None,
+) -> ResultadoIva:
     """`cfdis`: iterable con tipo, direccion, estatus, metodo_pago_codigo, subtotal, iva, uuid_fiscal.
     `pagado_por_uuid`: {uuid factura PPD: (importe pagado, IVA pagado)} según los
-    complementos de pago reales — lo ya pagado deja de ser "PPD pendiente"."""
+    complementos de pago reales — lo ya pagado deja de ser "PPD pendiente".
+    `pagos_manuales`: facturas PPD marcadas a mano como pagadas dentro del
+    periodo; su IVA se reconoce ahí (fila "Pago manual"), como si fueran un REP.
+    `pagado_rep_por_uuid`: igual que pagado_por_uuid pero SOLO con REP reales,
+    para no reconocer dos veces lo que un REP ya cubrió de una factura marcada."""
     pagado_por_uuid = pagado_por_uuid or {}
+    pagado_rep_por_uuid = pagado_rep_por_uuid if pagado_rep_por_uuid is not None else pagado_por_uuid
     filas_e = {k: DesgloseIva(k) for k in FILAS_IVA}
     filas_r = {k: DesgloseIva(k) for k in FILAS_IVA}
 
@@ -153,6 +153,8 @@ def iva_base_flujo(cfdis, pagado_por_uuid: dict[str, tuple[Decimal, Decimal]] | 
         elif c.tipo == "nota_credito":
             suma(filas["Notas de crédito"], c)
         elif c.metodo_pago_codigo == "PPD":
+            if getattr(c, "pago_manual_fecha", None) is not None:
+                continue  # pagada a mano: se reconoce en el mes del pago manual
             pagado, iva_pagado = pagado_por_uuid.get(getattr(c, "uuid_fiscal", ""), (Decimal("0"), Decimal("0")))
             total = Decimal(c.subtotal) + Decimal(c.iva)
             if pagado >= total and total > 0:
@@ -163,8 +165,16 @@ def iva_base_flujo(cfdis, pagado_por_uuid: dict[str, tuple[Decimal, Decimal]] | 
         else:
             suma(filas["PUE"], c)
 
-    tras = filas_e["PUE"].iva + filas_e["REP"].iva - filas_e["Notas de crédito"].iva
-    acre = filas_r["PUE"].iva + filas_r["REP"].iva - filas_r["Notas de crédito"].iva
+    for c in pagos_manuales:
+        # Lo que ya cubrieron los REP reales no se vuelve a reconocer: solo el resto.
+        pagado_rep, iva_rep = pagado_rep_por_uuid.get(getattr(c, "uuid_fiscal", ""), (Decimal("0"), Decimal("0")))
+        filas = filas_e if c.direccion == "emitido" else filas_r
+        base_resto = max(Decimal(c.subtotal) - (pagado_rep - iva_rep), Decimal("0"))
+        iva_resto = max(Decimal(c.iva) - iva_rep, Decimal("0"))
+        suma(filas["Pago manual"], c, base_resto, iva_resto)
+
+    tras = filas_e["PUE"].iva + filas_e["REP"].iva + filas_e["Pago manual"].iva - filas_e["Notas de crédito"].iva
+    acre = filas_r["PUE"].iva + filas_r["REP"].iva + filas_r["Pago manual"].iva - filas_r["Notas de crédito"].iva
     for f in list(filas_e.values()) + list(filas_r.values()):
         f.base, f.iva = q2(f.base), q2(f.iva)
     return ResultadoIva(

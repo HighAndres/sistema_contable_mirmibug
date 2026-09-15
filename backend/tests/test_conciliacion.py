@@ -118,20 +118,26 @@ def test_flujo_completo_importar_auto_manual_declarar_resumen(client, seed_rbac,
     if por_ref["A1"]["estado"] == "conciliado":
         assert por_ref["A1"]["cfdi_uuid"] == ingreso.uuid_fiscal and por_ref["A1"]["conciliado_por"] == "auto"
 
-    # El depósito sin factura no tiene candidatos; se ignora manualmente
+    # El depósito sin factura no tiene candidatos exactos ni similares (a lo sumo
+    # facturas mayores que podría estar pagando en parte); se ignora manualmente
     dep = por_ref["C3"]
-    assert client.get(f"/api/v1/conciliacion/bancos/movimientos/{dep['id']}/candidatos", headers=headers).json() == []
+    cand_dep = client.get(f"/api/v1/conciliacion/bancos/movimientos/{dep['id']}/candidatos?dias_atras=5", headers=headers).json()
+    assert all(c["coincidencia"] == "parcial" for c in cand_dep["candidatos"]) and cand_dep["movimiento"]["restante"] == 777.77
     ig = client.post(f"/api/v1/conciliacion/bancos/movimientos/{dep['id']}/ignorar", headers=headers, json={"nota": "Aportación de socio"}).json()
     assert ig["estado"] == "ignorado" and ig["nota"] == "Aportación de socio"
 
     # Conciliación manual: candidatos del pago al proveedor incluyen el CFDI del gasto
     pago = por_ref["B2"]
-    cands = client.get(f"/api/v1/conciliacion/bancos/movimientos/{pago['id']}/candidatos", headers=headers).json()
-    assert any(c["cfdi_id"] == str(egreso.id) for c in cands)
+    if pago["estado"] == "conciliado":  # el auto pudo ligarlo ya: se libera para probar el flujo manual
+        client.post(f"/api/v1/conciliacion/bancos/movimientos/{pago['id']}/desconciliar", headers=headers)
+    cands = client.get(f"/api/v1/conciliacion/bancos/movimientos/{pago['id']}/candidatos", headers=headers).json()["candidatos"]
+    exacto = next(c for c in cands if c["cfdi_id"] == str(egreso.id))
+    assert exacto["coincidencia"] == "exacto" and exacto["dias"] == 1 and exacto["pagado_despues"] is True and exacto["contraparte_en_concepto"] is True
     man = client.post(f"/api/v1/conciliacion/bancos/movimientos/{pago['id']}/conciliar", headers=headers, json={"cfdi_id": str(egreso.id)}).json()
-    assert man["estado"] == "conciliado" and man["conciliado_por"] == "manual" and man["cfdi_total"] == float(egreso.total)
+    assert man["estado"] == "conciliado" and man["conciliado_por"] == "manual"
+    assert man["importe_ligado"] == float(egreso.total) and man["restante"] == 0 and [l["cfdi_id"] for l in man["ligas"]] == [str(egreso.id)]
     des = client.post(f"/api/v1/conciliacion/bancos/movimientos/{pago['id']}/desconciliar", headers=headers).json()
-    assert des["estado"] == "pendiente" and des["cfdi_id"] is None
+    assert des["estado"] == "pendiente" and des["ligas"] == [] and des["cfdi_uuid"] is None
 
     # Declaración del mes del ingreso + resumen a tres columnas
     anio, mes = ingreso.fecha.year, ingreso.fecha.month

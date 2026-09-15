@@ -17,8 +17,8 @@ def cfdis_periodo(db: Session, *, empresa_id: uuid.UUID, anio: int, mes: int | N
     return list(db.scalars(stmt))
 
 
-def pagado_por_uuid(db: Session, *, empresa_id: uuid.UUID) -> dict[str, tuple[Decimal, Decimal]]:
-    """{uuid factura PPD: (importe pagado, IVA pagado)} con los REP vigentes de la empresa."""
+def pagado_rep_por_uuid(db: Session, *, empresa_id: uuid.UUID) -> dict[str, tuple[Decimal, Decimal]]:
+    """{uuid factura PPD: (importe pagado, IVA pagado)} SOLO con los REP vigentes."""
     filas = db.execute(
         select(CfdiPagoDocto.uuid_relacionado, func.coalesce(func.sum(CfdiPagoDocto.imp_pagado), 0), func.coalesce(func.sum(CfdiPagoDocto.iva_pagado), 0))
         .join(Cfdi, Cfdi.id == CfdiPagoDocto.cfdi_pago_id)
@@ -28,8 +28,42 @@ def pagado_por_uuid(db: Session, *, empresa_id: uuid.UUID) -> dict[str, tuple[De
     return {u: (Decimal(p), Decimal(i)) for u, p, i in filas}
 
 
+def pagado_por_uuid(db: Session, *, empresa_id: uuid.UUID) -> dict[str, tuple[Decimal, Decimal]]:
+    """Como pagado_rep_por_uuid, pero una factura marcada como pagada A MANO
+    cuenta como cubierta por completo (total, IVA), para que deje de ser
+    "pendiente" en todos lados: IVA base flujo, saldos de clientes/proveedores,
+    antigüedad y reportes."""
+    return _con_pagos_manuales(db, empresa_id=empresa_id, base=pagado_rep_por_uuid(db, empresa_id=empresa_id))
+
+
+def _con_pagos_manuales(db: Session, *, empresa_id: uuid.UUID, base: dict[str, tuple[Decimal, Decimal]]) -> dict[str, tuple[Decimal, Decimal]]:
+    out = dict(base)
+    manuales = db.execute(
+        select(Cfdi.uuid_fiscal, Cfdi.total, Cfdi.iva).where(Cfdi.empresa_id == empresa_id, Cfdi.pago_manual_fecha.is_not(None))
+    ).all()
+    for u, total, iva in manuales:
+        p, i = out.get(u, (Decimal("0"), Decimal("0")))
+        out[u] = (max(p, Decimal(total)), max(i, Decimal(iva)))
+    return out
+
+
+def pagos_manuales_periodo(db: Session, *, empresa_id: uuid.UUID, anio: int, mes: int | None) -> list[Cfdi]:
+    """Facturas PPD vigentes marcadas a mano como pagadas DENTRO del periodo (por
+    fecha de pago manual, no por fecha de la factura): en flujo se reconocen ahí."""
+    stmt = select(Cfdi).where(Cfdi.empresa_id == empresa_id, Cfdi.estatus == "vigente", extract("year", Cfdi.pago_manual_fecha) == anio)
+    if mes:
+        stmt = stmt.where(extract("month", Cfdi.pago_manual_fecha) == mes)
+    return list(db.scalars(stmt))
+
+
 def iva_periodo(db: Session, *, empresa_id: uuid.UUID, anio: int, mes: int | None) -> calculos.ResultadoIva:
-    return calculos.iva_base_flujo(cfdis_periodo(db, empresa_id=empresa_id, anio=anio, mes=mes), pagado_por_uuid(db, empresa_id=empresa_id))
+    rep = pagado_rep_por_uuid(db, empresa_id=empresa_id)
+    return calculos.iva_base_flujo(
+        cfdis_periodo(db, empresa_id=empresa_id, anio=anio, mes=mes),
+        _con_pagos_manuales(db, empresa_id=empresa_id, base=rep),
+        pagos_manuales=pagos_manuales_periodo(db, empresa_id=empresa_id, anio=anio, mes=mes),
+        pagado_rep_por_uuid=rep,
+    )
 
 
 def _por_mes(db: Session, *, empresa_id: uuid.UUID, anio: int, direccion: str, flujo: bool) -> dict[int, Decimal]:
@@ -65,6 +99,24 @@ def _por_mes(db: Session, *, empresa_id: uuid.UUID, anio: int, direccion: str, f
     )
     for m, v in db.execute(stmt_nc).all():
         out[int(m)] = out.get(int(m), Decimal("0")) - 2 * Decimal(v)  # estaba sumada; ahora resta
+    if flujo:
+        # Facturas PPD pagadas a mano: en flujo se reconocen en el mes del pago
+        # manual (los REP ya entran arriba por su propia fecha).
+        mes_pm = extract("month", Cfdi.pago_manual_fecha)
+        stmt_pm = (
+            select(mes_pm, func.coalesce(func.sum(Cfdi.subtotal), 0))
+            .where(
+                Cfdi.empresa_id == empresa_id,
+                extract("year", Cfdi.pago_manual_fecha) == anio,
+                Cfdi.direccion == direccion,
+                Cfdi.estatus == "vigente",
+                Cfdi.tipo.in_(("ingreso", "egreso")),
+                Cfdi.metodo_pago_codigo == "PPD",
+            )
+            .group_by(mes_pm)
+        )
+        for m, v in db.execute(stmt_pm).all():
+            out[int(m)] = out.get(int(m), Decimal("0")) + Decimal(v)
     return out
 
 

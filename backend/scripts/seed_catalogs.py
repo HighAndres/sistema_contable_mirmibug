@@ -8,17 +8,11 @@ from sqlalchemy import select
 
 from app.db.session import SessionLocal
 from app.modules.catalogs.models import Catalogo
+from app.modules.impuestos.regimenes import REGIMENES
 
 CATALOGOS: dict[str, dict[str, str]] = {
-    "regimen_fiscal": {
-        "601": "General de Ley Personas Morales",
-        "603": "Personas Morales con Fines no Lucrativos",
-        "605": "Sueldos y Salarios e Ingresos Asimilados a Salarios",
-        "606": "Arrendamiento",
-        "612": "Personas Físicas con Actividades Empresariales y Profesionales",
-        "621": "Incorporación Fiscal",
-        "626": "Régimen Simplificado de Confianza (RESICO)",
-    },
+    # Régimen fiscal: c_RegimenFiscal completo, fuente única en impuestos/regimenes.py
+    "regimen_fiscal": {r.codigo: r.nombre for r in REGIMENES.values()},
     "forma_pago": {
         "01": "Efectivo",
         "02": "Cheque nominativo",

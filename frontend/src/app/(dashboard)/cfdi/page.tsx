@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, FileCode2, FileUp, RefreshCw, Search, X } from "lucide-react";
+import { CheckCircle2, Download, FileCode2, FileUp, RefreshCw, Search, Undo2, X } from "lucide-react";
 
 import { useEmpresa } from "@/components/empresa-provider";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -17,7 +18,7 @@ import { exportarExcel } from "@/lib/export-xlsx";
 import { formatDate, formatMoney, formatMoney2 } from "@/lib/format";
 import { PERM, can } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
-import type { CargaXmlResponse, Catalogo, CfdiDetalle, CfdiEstatus, CfdiPage, CfdiResumen, CfdiTipo } from "@/lib/types";
+import type { CargaXmlResponse, Catalogo, CfdiDetalle, CfdiEstatus, CfdiPage, CfdiResumen, CfdiTipo, EstadoPago } from "@/lib/types";
 
 const SEVERIDAD_VARIANT = { alta: "destructive", media: "warning", baja: "success" } as const;
 
@@ -45,6 +46,8 @@ const ESTATUS_VARIANT: Record<CfdiEstatus, "secondary" | "destructive" | "warnin
   cancelado: "destructive",
   en_proceso: "warning",
 };
+const PAGO_LABEL: Record<EstadoPago, string> = { pagada: "Pagada", parcial: "Parcial", pendiente: "Pendiente" };
+const PAGO_VARIANT: Record<EstadoPago, "success" | "warning" | "destructive"> = { pagada: "success", parcial: "warning", pendiente: "destructive" };
 const TIPO_LABEL: Record<CfdiTipo, string> = { ingreso: "Ingreso", egreso: "Gasto", pago: "Pago", nomina: "Nómina", nota_credito: "Nota de crédito" };
 
 interface Filtros {
@@ -56,9 +59,10 @@ interface Filtros {
   metodo: string;
   forma: string;
   q: string;
+  estadoPago: string;
 }
 
-const FILTROS_VACIOS: Filtros = { estatus: TODOS, emisor: "", receptor: "", anio: TODOS, mes: TODOS, metodo: TODOS, forma: TODOS, q: "" };
+const FILTROS_VACIOS: Filtros = { estatus: TODOS, emisor: "", receptor: "", anio: TODOS, mes: TODOS, metodo: TODOS, forma: TODOS, q: "", estadoPago: TODOS };
 const PAGE_SIZE = 100;
 
 export default function CfdiPageRoute() {
@@ -73,6 +77,47 @@ export default function CfdiPageRoute() {
   const [loading, setLoading] = useState(true);
   const [sincronizando, setSincronizando] = useState(false);
   const [detalle, setDetalle] = useState<CfdiDetalle | null>(null);
+  const puedeEditar = can(empresaActiva?.permisos, PERM.CFDI_EDITAR);
+
+  // --- pago registrado a mano (factura PPD sin REP ni movimiento bancario) ---
+  const [openPago, setOpenPago] = useState(false);
+  const [fechaPago, setFechaPago] = useState("");
+  const [notaPago, setNotaPago] = useState("");
+  const [guardandoPago, setGuardandoPago] = useState(false);
+  const [errorPago, setErrorPago] = useState<string | null>(null);
+
+  function abrirPagoManual() {
+    setFechaPago(new Date().toISOString().slice(0, 10));
+    setNotaPago("");
+    setErrorPago(null);
+    setOpenPago(true);
+  }
+
+  async function guardarPagoManual() {
+    if (!detalle) return;
+    setGuardandoPago(true);
+    setErrorPago(null);
+    try {
+      await apiFetch(`/cfdi/${detalle.id}/pago-manual`, { method: "POST", body: JSON.stringify({ fecha: fechaPago, nota: notaPago.trim() || null }) });
+      setOpenPago(false);
+      await Promise.all([verDetalle(detalle.id), cargar()]);
+    } catch (err) {
+      setErrorPago(err instanceof ApiError ? err.message : "No se pudo registrar el pago");
+    } finally {
+      setGuardandoPago(false);
+    }
+  }
+
+  async function quitarPagoManual() {
+    if (!detalle) return;
+    setGuardandoPago(true);
+    try {
+      await apiFetch(`/cfdi/${detalle.id}/pago-manual`, { method: "DELETE" });
+      await Promise.all([verDetalle(detalle.id), cargar()]);
+    } finally {
+      setGuardandoPago(false);
+    }
+  }
 
   // --- carga de XML / ZIP ---
   const [openXml, setOpenXml] = useState(false);
@@ -114,6 +159,7 @@ export default function CfdiPageRoute() {
       if (aplicados.metodo !== TODOS) p.set("metodo_pago", aplicados.metodo);
       if (aplicados.forma !== TODOS) p.set("forma_pago", aplicados.forma);
       if (aplicados.q.trim()) p.set("q", aplicados.q.trim());
+      if (aplicados.estadoPago !== TODOS) p.set("estado_pago", aplicados.estadoPago);
       return p;
     },
     [tab, aplicados],
@@ -196,6 +242,7 @@ export default function CfdiPageRoute() {
         IVA: c.iva,
         Total: c.total,
         Estatus: ESTATUS_LABEL[c.estatus],
+        "Estado de pago": c.estado_pago && c.metodo_pago_codigo === "PPD" ? `${PAGO_LABEL[c.estado_pago]}${c.pago_manual_fecha ? ` (a mano ${c.pago_manual_fecha})` : ""}` : "",
       })),
     });
   }
@@ -329,6 +376,16 @@ export default function CfdiPageRoute() {
                 ))}
               </SelectContent>
             </Select>
+            {(tab === "ingreso" || tab === "egreso" || tab === "todos") && (
+              <Select value={filtros.estadoPago} onValueChange={(v) => setFiltros({ ...filtros, estadoPago: v })}>
+                <SelectTrigger className="w-[190px]"><SelectValue placeholder="Estado de pago" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={TODOS}>Pagadas y pendientes</SelectItem>
+                  <SelectItem value="pagada">{tab === "egreso" ? "Pagadas" : "Cobradas / pagadas"}</SelectItem>
+                  <SelectItem value="pendiente">Pendientes (PPD sin pagar)</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
             <div className="ml-auto flex gap-2">
               {hayFiltros && (
                 <Button variant="ghost" onClick={limpiarFiltros}>
@@ -358,12 +415,13 @@ export default function CfdiPageRoute() {
                   <TableHead className="text-right">Subtotal</TableHead>
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead>Estatus</TableHead>
+                  <TableHead>Pago</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading && (
                   <TableRow>
-                    <TableCell colSpan={11} className="py-8 text-center text-muted-foreground">Cargando...</TableCell>
+                    <TableCell colSpan={12} className="py-8 text-center text-muted-foreground">Cargando...</TableCell>
                   </TableRow>
                 )}
                 {!loading &&
@@ -398,11 +456,20 @@ export default function CfdiPageRoute() {
                       <TableCell>
                         <Badge variant={ESTATUS_VARIANT[c.estatus]}>{c.estatus === "en_proceso" ? "En proceso" : ESTATUS_LABEL[c.estatus]}</Badge>
                       </TableCell>
+                      <TableCell>
+                        {c.estado_pago && c.metodo_pago_codigo === "PPD" ? (
+                          <Badge variant={PAGO_VARIANT[c.estado_pago]} title={c.pago_manual_fecha ? `Registrada a mano el ${formatDate(c.pago_manual_fecha)}` : undefined}>
+                            {PAGO_LABEL[c.estado_pago]}{c.pago_manual_fecha ? " · a mano" : ""}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 {!loading && page?.items.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={11} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={12} className="py-8 text-center text-muted-foreground">
                       {hayFiltros ? "Sin CFDIs con esos filtros." : 'Sin CFDIs. Usa "Sincronizar con SAT" para traer datos.'}
                     </TableCell>
                   </TableRow>
@@ -463,11 +530,34 @@ export default function CfdiPageRoute() {
                     <div className="flex items-center justify-between">
                       <p className="font-medium">Complementos de pago recibidos</p>
                       <Badge variant={(detalle.saldo_pendiente ?? 0) > 0 ? "warning" : "success"}>
-                        {(detalle.saldo_pendiente ?? 0) > 0 ? `Saldo pendiente ${formatMoney2(detalle.saldo_pendiente ?? 0)}` : "Pagada"}
+                        {(detalle.saldo_pendiente ?? 0) > 0 ? `Saldo pendiente ${formatMoney2(detalle.saldo_pendiente ?? 0)}` : detalle.direccion === "emitido" ? "Cobrada" : "Pagada"}
                       </Badge>
                     </div>
+                    {detalle.pago_manual_fecha ? (
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-accent px-2 py-1.5 text-xs">
+                        <span>
+                          <CheckCircle2 className="mr-1 inline h-3.5 w-3.5 text-[color:var(--status-good)]" />
+                          Registrada a mano como {detalle.direccion === "emitido" ? "cobrada" : "pagada"} el {formatDate(detalle.pago_manual_fecha)}
+                          {detalle.pago_manual_nota && <span className="text-muted-foreground"> · {detalle.pago_manual_nota}</span>}
+                        </span>
+                        {puedeEditar && (
+                          <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={guardandoPago} onClick={quitarPagoManual}>
+                            <Undo2 className="mr-1 h-3 w-3" /> Quitar marca
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      puedeEditar && detalle.estatus === "vigente" && (detalle.saldo_pendiente ?? 0) > 0 && (
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <span className="text-muted-foreground">¿Se {detalle.direccion === "emitido" ? "cobró" : "pagó"} sin REP ni movimiento bancario identificable?</span>
+                          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={abrirPagoManual}>
+                            <CheckCircle2 className="mr-1 h-3 w-3" /> Marcar como {detalle.direccion === "emitido" ? "cobrada" : "pagada"}
+                          </Button>
+                        </div>
+                      )
+                    )}
                     {detalle.pagos_recibidos.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">Ningún REP la paga todavía (cuenta por cobrar / pagar).</p>
+                      <p className="text-xs text-muted-foreground">{detalle.pago_manual_fecha ? "Sin REP; cuenta como pagada por la marca manual." : "Ningún REP la paga todavía (cuenta por cobrar / pagar)."}</p>
                     ) : (
                       <ul className="space-y-1 text-xs">
                         {detalle.pagos_recibidos.map((p) => (
@@ -587,6 +677,33 @@ export default function CfdiPageRoute() {
               </DialogFooter>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={openPago} onOpenChange={setOpenPago}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Marcar como {detalle?.direccion === "emitido" ? "cobrada" : "pagada"} a mano</DialogTitle>
+            <DialogDescription>
+              Factura {[detalle?.serie, detalle?.folio].filter(Boolean).join("-") || detalle?.uuid_fiscal.slice(0, 8)} por {formatMoney2(detalle?.total ?? 0)}.
+              Desde la fecha que indiques contará como {detalle?.direccion === "emitido" ? "cobrada" : "pagada"} en IVA, ISR, saldos y reportes, aunque no exista complemento de pago ni movimiento bancario. Queda registrado en la bitácora.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="fecha-pago">Fecha de {detalle?.direccion === "emitido" ? "cobro" : "pago"}</Label>
+              <Input id="fecha-pago" type="date" value={fechaPago} min={detalle?.fecha} onChange={(e) => setFechaPago(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="nota-pago">Nota (opcional)</Label>
+              <Input id="nota-pago" maxLength={255} placeholder="p. ej. Depósito del 12/08 sin REP, confirmado con el cliente" value={notaPago} onChange={(e) => setNotaPago(e.target.value)} />
+            </div>
+            {errorPago && <p className="text-sm text-destructive">{errorPago}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenPago(false)}>Cancelar</Button>
+            <Button onClick={guardarPagoManual} disabled={guardandoPago || !fechaPago}>{guardandoPago ? "Guardando…" : "Registrar"}</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

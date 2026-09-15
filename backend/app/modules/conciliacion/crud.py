@@ -1,26 +1,47 @@
+import re
+import unicodedata
 import uuid
 from datetime import date, timedelta
 from decimal import Decimal
+from itertools import combinations
 
 from sqlalchemy import extract, func, select
 from sqlalchemy.orm import Session
 
+from app.modules.cfdi import crud as cfdi_crud
 from app.modules.cfdi.models import Cfdi
 from app.modules.conciliacion.importador import FilaBanco
-from app.modules.conciliacion.models import CuentaBancaria, DeclaracionPeriodo, MovimientoBancario
+from app.modules.conciliacion.models import CuentaBancaria, DeclaracionPeriodo, LigaConciliacion, MovimientoBancario
 from app.modules.conciliacion.schemas import (
     CandidatoCfdi,
+    CandidatosResponse,
     ColumnaBanco,
     ColumnaSat,
+    Combinacion,
     DeclaracionRead,
     Diferencias,
+    LigaRead,
     MovimientoBancoRead,
+    MovimientoResumen,
     ResumenConciliacion,
 )
 from app.modules.impuestos import crud as impuestos_crud
 from app.modules.tenants.models import Empresa
 
 TOLERANCIA_MONTO = Decimal("0.01")
+# Ventana por defecto de la búsqueda asistida: una factura PPD se cobra a 30/60/90
+# días, así que el pago suele caer en un mes distinto al de emisión.
+DIAS_ATRAS_DEFAULT = 120
+DIAS_ADELANTE_DEFAULT = 10
+TOLERANCIA_PCT_DEFAULT = Decimal("2")
+MAX_CFDI_COMBINACION = 4
+MAX_COMBINACIONES = 6
+TIPOS_CONCILIABLES = ("ingreso", "egreso", "pago")
+_STOP = {"SA", "DE", "CV", "SC", "RL", "SAPI", "SAS", "SRL", "AC", "Y", "EL", "LA", "LOS", "LAS", "DEL"}
+
+
+class ConciliacionError(ValueError):
+    """Regla de negocio violada al ligar (importes, dirección, estatus)."""
 
 
 # ---------- Cuentas ----------
@@ -104,56 +125,233 @@ def get_movimiento(db: Session, *, empresa_id, movimiento_id) -> MovimientoBanca
     return db.scalar(select(MovimientoBancario).where(MovimientoBancario.id == movimiento_id, MovimientoBancario.empresa_id == empresa_id))
 
 
-def _cfdis_ya_conciliados(db: Session, *, empresa_id) -> set[uuid.UUID]:
-    return set(
-        db.scalars(
-            select(MovimientoBancario.cfdi_id).where(MovimientoBancario.empresa_id == empresa_id, MovimientoBancario.cfdi_id.is_not(None))
-        ).all()
-    )
+def _normalizar(texto: str) -> str:
+    t = unicodedata.normalize("NFKD", texto or "").encode("ascii", "ignore").decode()
+    return re.sub(r"[^A-Z0-9 ]+", " ", t.upper())
 
 
-def candidatos_para(db: Session, *, mov: MovimientoBancario, tolerancia_dias: int = 5, limite: int = 10) -> list[CandidatoCfdi]:
-    """CFDI vigentes que podrían corresponder al movimiento: misma dirección del
-    dinero (abono ↔ emitidos cobrados; cargo ↔ recibidos pagados), monto igual
-    (±0.01) y fecha cercana. Se excluyen los ya ligados a otro movimiento."""
-    es_abono = Decimal(mov.abono or 0) > 0
-    monto = Decimal(mov.abono if es_abono else mov.cargo)
-    direccion = "emitido" if es_abono else "recibido"
-    ocupados = _cfdis_ya_conciliados(db, empresa_id=mov.empresa_id) - ({mov.cfdi_id} if mov.cfdi_id else set())
-    desde, hasta = mov.fecha - timedelta(days=tolerancia_dias), mov.fecha + timedelta(days=tolerancia_dias)
+def _contraparte_en_concepto(concepto: str, nombre: str, rfc: str) -> bool:
+    """El banco suele traer el nombre o RFC del ordenante en el concepto del SPEI."""
+    c = _normalizar(concepto)
+    if rfc and rfc.upper() in c:
+        return True
+    tokens = [t for t in _normalizar(nombre).split() if len(t) >= 4 and t not in _STOP]
+    if not tokens:
+        return False
+    hits = sum(1 for t in tokens if t in c)
+    return hits >= 2 or (hits == 1 and len(tokens) == 1)
+
+
+def _direccion_de(mov: MovimientoBancario) -> str:
+    return "emitido" if Decimal(mov.abono or 0) > 0 else "recibido"
+
+
+def _contraparte(c: Cfdi) -> tuple[str, str]:
+    return (c.nombre_receptor, c.rfc_receptor) if c.direccion == "emitido" else (c.nombre_emisor, c.rfc_emisor)
+
+
+def _serie_folio(c: Cfdi) -> str | None:
+    if not (c.serie or c.folio):
+        return None
+    return f"{c.serie or ''}{'-' if c.serie and c.folio else ''}{c.folio or ''}"
+
+
+def ligado_por_cfdi(db: Session, *, empresa_id, cfdi_ids: list[uuid.UUID], excluir_mov: uuid.UUID | None = None) -> dict[uuid.UUID, Decimal]:
+    """{cfdi_id: importe ya aplicado desde movimientos bancarios} (N:1)."""
+    if not cfdi_ids:
+        return {}
     stmt = (
-        select(Cfdi)
-        .where(
-            Cfdi.empresa_id == mov.empresa_id,
-            Cfdi.direccion == direccion,
-            Cfdi.estatus == "vigente",
-            Cfdi.tipo.in_(("ingreso", "egreso", "pago")),
-            Cfdi.total.between(monto - TOLERANCIA_MONTO, monto + TOLERANCIA_MONTO),
-            Cfdi.fecha.between(desde, hasta),
-        )
-        .order_by(Cfdi.fecha)
+        select(LigaConciliacion.cfdi_id, func.coalesce(func.sum(LigaConciliacion.importe), 0))
+        .join(MovimientoBancario, MovimientoBancario.id == LigaConciliacion.movimiento_id)
+        .where(MovimientoBancario.empresa_id == empresa_id, LigaConciliacion.cfdi_id.in_(cfdi_ids))
+        .group_by(LigaConciliacion.cfdi_id)
     )
-    out = []
-    for c in db.scalars(stmt):
-        if c.id in ocupados:
+    if excluir_mov is not None:
+        stmt = stmt.where(LigaConciliacion.movimiento_id != excluir_mov)
+    return {cid: Decimal(v) for cid, v in db.execute(stmt).all()}
+
+
+def _saldos_cfdi(db: Session, *, empresa_id, cfdis: list[Cfdi], excluir_mov=None) -> dict[uuid.UUID, tuple[Decimal, Decimal, Decimal]]:
+    """{cfdi_id: (pagado por REP, ligado desde otros movimientos, saldo ligable)}."""
+    ligado = ligado_por_cfdi(db, empresa_id=empresa_id, cfdi_ids=[c.id for c in cfdis], excluir_mov=excluir_mov)
+    uuids_ppd = [c.uuid_fiscal for c in cfdis if c.tipo in ("ingreso", "egreso") and c.metodo_pago_codigo == "PPD"]
+    rep = cfdi_crud.pagado_rep_de(db, empresa_id=empresa_id, uuids=uuids_ppd)
+    out = {}
+    for c in cfdis:
+        pagado_rep = rep.get(c.uuid_fiscal, Decimal("0"))
+        lig = ligado.get(c.id, Decimal("0"))
+        out[c.id] = (pagado_rep, lig, Decimal(c.total) - pagado_rep - lig)
+    return out
+
+
+def _tolerancia(restante: Decimal, tolerancia_pct: Decimal) -> Decimal:
+    return max(Decimal("1.00"), (restante * tolerancia_pct / 100).quantize(Decimal("0.01")))
+
+
+def _clasificar(saldo: Decimal, restante: Decimal, tol: Decimal) -> str:
+    dif = saldo - restante
+    if abs(dif) <= TOLERANCIA_MONTO:
+        return "exacto"
+    if abs(dif) <= tol:
+        return "similar"
+    return "parcial" if dif > 0 else "menor"
+
+
+_RANK = {"exacto": 0, "similar": 1, "parcial": 2, "menor": 3}
+
+
+def candidatos_para(
+    db: Session,
+    *,
+    mov: MovimientoBancario,
+    dias_atras: int = DIAS_ATRAS_DEFAULT,
+    dias_adelante: int = DIAS_ADELANTE_DEFAULT,
+    tolerancia_pct: Decimal = TOLERANCIA_PCT_DEFAULT,
+    q: str | None = None,
+    solo_exactos: bool = False,
+    limite: int = 30,
+) -> CandidatosResponse:
+    """Búsqueda asistida: CFDI vigentes en la misma dirección del dinero (abono ↔
+    emitidos; cargo ↔ recibidos) con saldo por ligar, dentro de la ventana de
+    fechas. Cada candidato trae cómo coincide (exacto / similar / parcial /
+    menor) y se sugieren combinaciones de varios CFDI de la misma contraparte
+    que sumen lo que falta del movimiento. Con `q` se busca por contraparte,
+    RFC, folio o UUID sin importar el monto."""
+    restante = mov.restante
+    resumen = MovimientoResumen(id=mov.id, fecha=mov.fecha, monto=float(mov.monto), importe_ligado=float(mov.importe_ligado), restante=float(restante))
+    if restante <= TOLERANCIA_MONTO:
+        return CandidatosResponse(movimiento=resumen, candidatos=[], combinaciones=[])
+    direccion = _direccion_de(mov)
+    desde, hasta = mov.fecha - timedelta(days=dias_atras), mov.fecha + timedelta(days=dias_adelante)
+    stmt = select(Cfdi).where(
+        Cfdi.empresa_id == mov.empresa_id,
+        Cfdi.direccion == direccion,
+        Cfdi.estatus == "vigente",
+        Cfdi.tipo.in_(TIPOS_CONCILIABLES),
+        Cfdi.total > 0,
+    )
+    if q:
+        like = f"%{q.strip()}%"
+        stmt = stmt.where(
+            Cfdi.nombre_emisor.ilike(like) | Cfdi.nombre_receptor.ilike(like) | Cfdi.rfc_emisor.ilike(like)
+            | Cfdi.rfc_receptor.ilike(like) | Cfdi.folio.ilike(like) | Cfdi.uuid_fiscal.ilike(like)
+        )
+    else:
+        stmt = stmt.where(Cfdi.fecha.between(desde, hasta))
+    if solo_exactos:
+        stmt = stmt.where(Cfdi.total >= restante - TOLERANCIA_MONTO)
+    cfdis = list(db.scalars(stmt.order_by(Cfdi.fecha.desc()).limit(400)))
+    saldos = _saldos_cfdi(db, empresa_id=mov.empresa_id, cfdis=cfdis, excluir_mov=mov.id)
+    tol = _tolerancia(restante, tolerancia_pct)
+
+    ya_ligados = {l.cfdi_id for l in mov.ligas}
+    out: list[CandidatoCfdi] = []
+    for c in cfdis:
+        if c.id in ya_ligados:
+            continue  # ya aplicado a este movimiento: se edita desde sus ligas, no como candidato
+        pagado_rep, lig, saldo = saldos[c.id]
+        if saldo <= TOLERANCIA_MONTO:
+            continue  # ya cobrado/pagado por completo
+        coincidencia = _clasificar(saldo, restante, tol)
+        if solo_exactos and coincidencia != "exacto":
             continue
-        contraparte_nombre = c.nombre_receptor if direccion == "emitido" else c.nombre_emisor
-        contraparte_rfc = c.rfc_receptor if direccion == "emitido" else c.rfc_emisor
+        nombre, rfc = _contraparte(c)
         out.append(
             CandidatoCfdi(
-                cfdi_id=c.id, uuid_fiscal=c.uuid_fiscal, tipo=c.tipo, direccion=c.direccion, fecha=c.fecha,
-                nombre_contraparte=contraparte_nombre, rfc_contraparte=contraparte_rfc, total=float(c.total),
-                diferencia=float(Decimal(c.total) - monto), dias=abs((c.fecha - mov.fecha).days),
+                cfdi_id=c.id, uuid_fiscal=c.uuid_fiscal, tipo=c.tipo, direccion=c.direccion, metodo_pago=c.metodo_pago_codigo,
+                serie_folio=_serie_folio(c), fecha=c.fecha, nombre_contraparte=nombre, rfc_contraparte=rfc, total=float(c.total),
+                pagado_rep=float(pagado_rep), ligado_otros=float(lig), saldo=float(saldo), diferencia=float(saldo - restante),
+                dias=abs((mov.fecha - c.fecha).days), pagado_despues=mov.fecha >= c.fecha, coincidencia=coincidencia,
+                contraparte_en_concepto=_contraparte_en_concepto(mov.concepto, nombre, rfc),
+                importe_sugerido=float(min(saldo, restante)),
             )
         )
-    out.sort(key=lambda x: (x.dias, abs(x.diferencia)))
-    return out[:limite]
+    # Exactos y similares primero; entre parciales y menores manda que la contraparte
+    # aparezca en el concepto del banco (es la pista más fuerte), luego la cercanía.
+    out.sort(key=lambda x: (min(_RANK[x.coincidencia], 2), not x.contraparte_en_concepto, _RANK[x.coincidencia], x.dias, abs(x.diferencia)))
+    combos = [] if solo_exactos else _combinaciones(out, restante=restante, tol=tol)
+    return CandidatosResponse(movimiento=resumen, candidatos=out[:limite], combinaciones=combos)
 
 
-def conciliar(db: Session, *, mov: MovimientoBancario, cfdi: Cfdi, por: str = "manual", nota: str | None = None) -> MovimientoBancario:
-    mov.cfdi_id = cfdi.id
-    mov.estado = "conciliado"
-    mov.conciliado_por = por
+def _combinaciones(cands: list[CandidatoCfdi], *, restante: Decimal, tol: Decimal) -> list[Combinacion]:
+    """Subconjuntos (2..4) de CFDI 'menores' de la misma contraparte cuya suma
+    cae en restante ± tolerancia. Un solo pago que liquida varias facturas."""
+    por_rfc: dict[str, list[CandidatoCfdi]] = {}
+    for c in cands:
+        if c.coincidencia == "menor":
+            por_rfc.setdefault(c.rfc_contraparte, []).append(c)
+    combos: list[Combinacion] = []
+    for rfc, grupo in por_rfc.items():
+        grupo = sorted(grupo, key=lambda x: x.dias)[:12]  # acota el espacio de búsqueda
+        saldos = [Decimal(str(g.saldo)) for g in grupo]
+        for n in range(2, min(MAX_CFDI_COMBINACION, len(grupo)) + 1):
+            for idx in combinations(range(len(grupo)), n):
+                total = sum((saldos[i] for i in idx), Decimal("0"))
+                if abs(total - restante) <= tol:
+                    combos.append(
+                        Combinacion(
+                            cfdi_ids=[grupo[i].cfdi_id for i in idx], rfc_contraparte=rfc, nombre_contraparte=grupo[0].nombre_contraparte,
+                            total=float(total), diferencia=float(total - restante),
+                        )
+                    )
+                if len(combos) >= MAX_COMBINACIONES * 3:
+                    break
+    combos.sort(key=lambda x: (abs(x.diferencia), len(x.cfdi_ids)))
+    return combos[:MAX_COMBINACIONES]
+
+
+def _actualizar_estado(mov: MovimientoBancario, *, por: str | None) -> None:
+    ligado = mov.importe_ligado
+    if ligado <= 0:
+        mov.estado, mov.conciliado_por = "pendiente", None
+    elif ligado >= mov.monto - TOLERANCIA_MONTO:
+        mov.estado, mov.conciliado_por = "conciliado", por or mov.conciliado_por or "manual"
+    else:
+        mov.estado, mov.conciliado_por = "parcial", por or mov.conciliado_por or "manual"
+
+
+def conciliar(
+    db: Session, *, mov: MovimientoBancario, ligas: list[tuple[Cfdi, Decimal | None]], por: str = "manual", nota: str | None = None
+) -> MovimientoBancario:
+    """Aplica uno o varios CFDI al movimiento. Sin importe se aplica lo que quepa.
+    Valida dirección, estatus y que no se rebase ni el saldo del CFDI ni el
+    monto del movimiento (con tolerancia de centavos)."""
+    if mov.estado == "ignorado":
+        raise ConciliacionError("El movimiento está marcado como ignorado; vuélvelo a pendiente primero")
+    direccion = _direccion_de(mov)
+    cfdis = [c for c, _ in ligas]
+    saldos = _saldos_cfdi(db, empresa_id=mov.empresa_id, cfdis=cfdis, excluir_mov=mov.id)
+    existentes = {l.cfdi_id: l for l in mov.ligas}
+    restante = mov.restante
+    for c, importe in ligas:
+        if c.empresa_id != mov.empresa_id:
+            raise ConciliacionError("CFDI de otra empresa")
+        if c.estatus != "vigente":
+            raise ConciliacionError(f"El CFDI {c.uuid_fiscal} no está vigente")
+        if c.tipo not in TIPOS_CONCILIABLES:
+            raise ConciliacionError(f"El CFDI {c.uuid_fiscal} es de tipo {c.tipo}; solo se concilian ingresos, gastos y complementos de pago")
+        if c.direccion != direccion:
+            raise ConciliacionError("Un abono solo se liga con CFDI emitidos y un cargo con CFDI recibidos")
+        _, _, saldo = saldos[c.id]
+        if c.id in existentes:  # re-ligar el mismo CFDI: se reemplaza el importe anterior
+            saldo += Decimal(existentes[c.id].importe)
+            restante += Decimal(existentes[c.id].importe)
+        if saldo <= TOLERANCIA_MONTO:
+            raise ConciliacionError(f"El CFDI {c.uuid_fiscal} ya está cubierto por completo (REP u otros movimientos)")
+        aplicar = importe if importe is not None else min(saldo, restante)
+        aplicar = Decimal(aplicar).quantize(Decimal("0.01"))
+        if aplicar <= 0:
+            raise ConciliacionError("El importe a ligar debe ser mayor a cero")
+        if aplicar > saldo + TOLERANCIA_MONTO:
+            raise ConciliacionError(f"El importe {aplicar} supera el saldo por ligar del CFDI ({saldo})")
+        if aplicar > restante + TOLERANCIA_MONTO:
+            raise ConciliacionError(f"El importe {aplicar} supera lo que le falta al movimiento ({restante})")
+        if c.id in existentes:
+            existentes[c.id].importe = aplicar
+        else:
+            mov.ligas.append(LigaConciliacion(cfdi_id=c.id, importe=aplicar))
+        restante -= aplicar
+    _actualizar_estado(mov, por=por)
     if nota is not None:
         mov.nota = nota
     db.commit()
@@ -161,8 +359,19 @@ def conciliar(db: Session, *, mov: MovimientoBancario, cfdi: Cfdi, por: str = "m
     return mov
 
 
+def quitar_liga(db: Session, *, mov: MovimientoBancario, cfdi_id: uuid.UUID) -> MovimientoBancario:
+    liga = next((l for l in mov.ligas if l.cfdi_id == cfdi_id), None)
+    if liga is None:
+        raise ConciliacionError("Ese CFDI no está ligado al movimiento")
+    mov.ligas.remove(liga)
+    _actualizar_estado(mov, por=None)
+    db.commit()
+    db.refresh(mov)
+    return mov
+
+
 def desconciliar(db: Session, *, mov: MovimientoBancario) -> MovimientoBancario:
-    mov.cfdi_id = None
+    mov.ligas.clear()
     mov.estado = "pendiente"
     mov.conciliado_por = None
     db.commit()
@@ -171,7 +380,7 @@ def desconciliar(db: Session, *, mov: MovimientoBancario) -> MovimientoBancario:
 
 
 def ignorar(db: Session, *, mov: MovimientoBancario, nota: str | None) -> MovimientoBancario:
-    mov.cfdi_id = None
+    mov.ligas.clear()
     mov.estado = "ignorado"
     mov.conciliado_por = None
     mov.nota = nota
@@ -180,22 +389,28 @@ def ignorar(db: Session, *, mov: MovimientoBancario, nota: str | None) -> Movimi
     return mov
 
 
-def auto_conciliar(db: Session, *, empresa_id, cuenta_id=None, anio=None, mes=None, tolerancia_dias=5) -> tuple[int, int, int, int]:
-    """Liga automáticamente los movimientos pendientes que tienen UN solo CFDI
-    candidato. Si hay varios (ambiguo) o ninguno, se dejan pendientes."""
+def auto_conciliar(db: Session, *, empresa_id, cuenta_id=None, anio=None, mes=None, tolerancia_dias=5) -> tuple[int, int, int, int, int]:
+    """Liga sola solo lo seguro: movimientos pendientes con UN único CFDI de
+    monto exacto a ±tolerancia_dias. Lo demás queda para la revisión asistida:
+    `ambiguos` (varios exactos) y `con_sugerencias` (similares, parciales o
+    combinaciones en la ventana amplia)."""
     pendientes, _ = listar_movimientos(db, empresa_id=empresa_id, cuenta_id=cuenta_id, anio=anio, mes=mes, estado="pendiente", limit=5000)
-    conc = amb = sin = 0
+    conc = amb = sin = sug = 0
     for mov in pendientes:
-        cands = candidatos_para(db, mov=mov, tolerancia_dias=tolerancia_dias, limite=2)
-        if len(cands) == 1:
-            cfdi = db.get(Cfdi, cands[0].cfdi_id)
-            conciliar(db, mov=mov, cfdi=cfdi, por="auto")
+        exactos = candidatos_para(db, mov=mov, dias_atras=tolerancia_dias, dias_adelante=tolerancia_dias, solo_exactos=True, limite=2).candidatos
+        if len(exactos) == 1:
+            cfdi = db.get(Cfdi, exactos[0].cfdi_id)
+            conciliar(db, mov=mov, ligas=[(cfdi, None)], por="auto")
             conc += 1
-        elif len(cands) > 1:
+        elif len(exactos) > 1:
             amb += 1
         else:
-            sin += 1
-    return len(pendientes), conc, sin, amb
+            amplio = candidatos_para(db, mov=mov)
+            if amplio.candidatos or amplio.combinaciones:
+                sug += 1
+            else:
+                sin += 1
+    return len(pendientes), conc, sin, amb, sug
 
 
 # ---------- Declaraciones ----------
@@ -255,18 +470,24 @@ def resumen(db: Session, *, empresa: Empresa, anio: int, mes: int) -> ResumenCon
             func.coalesce(func.sum(base.c.abono), 0),
             func.coalesce(func.sum(base.c.cargo), 0),
             func.count(),
-            func.coalesce(func.sum(base.c.abono).filter(base.c.estado == "conciliado"), 0),
-            func.coalesce(func.sum(base.c.cargo).filter(base.c.estado == "conciliado"), 0),
             func.count().filter(base.c.estado == "pendiente"),
+            func.count().filter(base.c.estado == "parcial"),
             func.count().filter(base.c.estado == "conciliado"),
             func.count().filter(base.c.estado == "ignorado"),
         )
     ).one()
-    abonos, cargos, n, ab_c, ca_c, pend, conc, ign = fila
+    abonos, cargos, n, pend, parc, conc, ign = fila
+    # Lo conciliado se mide por importe ligado (cuenta también lo parcial).
+    ab_c, ca_c = db.execute(
+        select(
+            func.coalesce(func.sum(LigaConciliacion.importe).filter(base.c.abono > 0), 0),
+            func.coalesce(func.sum(LigaConciliacion.importe).filter(base.c.cargo > 0), 0),
+        ).select_from(LigaConciliacion).join(base, base.c.id == LigaConciliacion.movimiento_id)
+    ).one()
     relevantes = int(n) - int(ign)
     banco = ColumnaBanco(
         abonos=float(abonos), cargos=float(cargos), num_movimientos=int(n), abonos_conciliados=float(ab_c), cargos_conciliados=float(ca_c),
-        pendientes=int(pend), conciliados=int(conc), ignorados=int(ign),
+        pendientes=int(pend), parciales=int(parc), conciliados=int(conc), ignorados=int(ign),
         porcentaje_conciliado=round(100 * int(conc) / relevantes, 1) if relevantes else 0.0,
     )
 
@@ -291,14 +512,28 @@ def resumen(db: Session, *, empresa: Empresa, anio: int, mes: int) -> ResumenCon
     return ResumenConciliacion(anio=anio, mes=mes, sat=sat, banco=banco, declarado=declarado, diferencias=dif, semaforo=semaforo)
 
 
+def a_liga_read(l: LigaConciliacion) -> LigaRead:
+    c = l.cfdi
+    nombre, rfc = _contraparte(c)
+    return LigaRead(
+        cfdi_id=c.id, uuid_fiscal=c.uuid_fiscal, tipo=c.tipo, serie_folio=_serie_folio(c), fecha=c.fecha,
+        nombre_contraparte=nombre, rfc_contraparte=rfc, total=float(c.total), importe=float(l.importe),
+    )
+
+
 def a_movimiento_read(m: MovimientoBancario) -> MovimientoBancoRead:
-    c = m.cfdi
-    nombre = None
-    if c is not None:
-        nombre = c.nombre_receptor if c.direccion == "emitido" else c.nombre_emisor
+    ligas = [a_liga_read(l) for l in m.ligas]
+    if not ligas:
+        cfdi_uuid = cfdi_nombre = None
+    elif len(ligas) == 1:
+        cfdi_uuid, cfdi_nombre = ligas[0].uuid_fiscal, ligas[0].nombre_contraparte
+    else:
+        nombres = {l.nombre_contraparte for l in ligas}
+        cfdi_uuid = None
+        cfdi_nombre = f"{len(ligas)} CFDI · {next(iter(nombres))}" if len(nombres) == 1 else f"{len(ligas)} CFDI · {len(nombres)} contrapartes"
     return MovimientoBancoRead(
         id=m.id, cuenta_id=m.cuenta_id, cuenta_alias=m.cuenta.alias, fecha=m.fecha, concepto=m.concepto, referencia=m.referencia,
         cargo=float(m.cargo), abono=float(m.abono), saldo=float(m.saldo) if m.saldo is not None else None, estado=m.estado,
-        conciliado_por=m.conciliado_por, nota=m.nota, cfdi_id=m.cfdi_id, cfdi_uuid=c.uuid_fiscal if c else None,
-        cfdi_nombre=nombre, cfdi_total=float(c.total) if c else None, archivo_nombre=m.archivo_nombre, created_at=m.created_at,
+        conciliado_por=m.conciliado_por, nota=m.nota, ligas=ligas, importe_ligado=float(m.importe_ligado), restante=float(m.restante),
+        cfdi_uuid=cfdi_uuid, cfdi_nombre=cfdi_nombre, archivo_nombre=m.archivo_nombre, created_at=m.created_at,
     )

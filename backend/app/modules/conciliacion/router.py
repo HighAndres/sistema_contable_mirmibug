@@ -6,6 +6,7 @@ conciliar, capturar declaraciones).
 
 import uuid
 from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.orm import Session
@@ -15,11 +16,12 @@ from app.db.session import get_db
 from app.modules.bitacora import crud as bitacora_crud
 from app.modules.cfdi import crud as cfdi_crud
 from app.modules.conciliacion import crud
+from app.modules.conciliacion.crud import ConciliacionError
 from app.modules.conciliacion.importador import ImportacionError, importar_estado_cuenta
 from app.modules.conciliacion.schemas import (
     AutoConciliarRequest,
     AutoConciliarResponse,
-    CandidatoCfdi,
+    CandidatosResponse,
     ConciliarRequest,
     CuentaCreate,
     CuentaRead,
@@ -94,7 +96,7 @@ def movimientos(
     cuenta_id: uuid.UUID | None = None,
     anio: int | None = Query(default=None, ge=2000, le=2100),
     mes: int | None = Query(default=None, ge=1, le=12),
-    estado: str | None = Query(default=None, pattern="^(pendiente|conciliado|ignorado)$"),
+    estado: str | None = Query(default=None, pattern="^(pendiente|parcial|conciliado|ignorado)$"),
     q: str | None = Query(default=None, max_length=120),
     limit: int = Query(default=200, le=1000),
     offset: int = 0,
@@ -112,23 +114,51 @@ def _mov_or_404(db, ctx, movimiento_id):
     return m
 
 
-@router.get("/bancos/movimientos/{movimiento_id}/candidatos", response_model=list[CandidatoCfdi])
+@router.get("/bancos/movimientos/{movimiento_id}/candidatos", response_model=CandidatosResponse)
 def candidatos(
     movimiento_id: uuid.UUID,
-    tolerancia_dias: int = Query(default=5, ge=0, le=60),
+    dias_atras: int = Query(default=crud.DIAS_ATRAS_DEFAULT, ge=0, le=730, description="CFDI emitidos hasta N días antes del movimiento (pagos en otro mes)"),
+    dias_adelante: int = Query(default=crud.DIAS_ADELANTE_DEFAULT, ge=0, le=90),
+    tolerancia_pct: Decimal = Query(default=crud.TOLERANCIA_PCT_DEFAULT, ge=0, le=25, description="Diferencia admitida para 'similar' (comisiones, redondeo)"),
+    q: str | None = Query(default=None, max_length=120, description="Buscar por contraparte, RFC, folio o UUID sin importar el monto"),
     ctx: EmpresaContext = Depends(require_permissions("conciliacion.leer")),
     db: Session = Depends(get_db),
-):
-    return crud.candidatos_para(db, mov=_mov_or_404(db, ctx, movimiento_id), tolerancia_dias=tolerancia_dias)
+) -> CandidatosResponse:
+    """Sugerencias para conciliar a mano: exactos, similares, parciales (N:1),
+    menores y combinaciones de varios CFDI (1:N)."""
+    return crud.candidatos_para(db, mov=_mov_or_404(db, ctx, movimiento_id), dias_atras=dias_atras, dias_adelante=dias_adelante, tolerancia_pct=tolerancia_pct, q=q)
 
 
 @router.post("/bancos/movimientos/{movimiento_id}/conciliar", response_model=MovimientoBancoRead)
 def conciliar_manual(movimiento_id: uuid.UUID, payload: ConciliarRequest, ctx: EmpresaContext = Depends(require_permissions("conciliacion.gestionar")), db: Session = Depends(get_db)):
+    """Liga uno o varios CFDI al movimiento. Si el importe ligado no cubre el
+    movimiento queda en estado `parcial`; se pueden agregar más ligas después."""
     mov = _mov_or_404(db, ctx, movimiento_id)
-    cfdi = cfdi_crud.get(db, empresa_id=ctx.empresa.id, cfdi_id=payload.cfdi_id)
-    if cfdi is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "CFDI no encontrado")
-    return crud.a_movimiento_read(crud.conciliar(db, mov=mov, cfdi=cfdi, por="manual", nota=payload.nota))
+    ligas = []
+    for l in payload.ligas:
+        cfdi = cfdi_crud.get(db, empresa_id=ctx.empresa.id, cfdi_id=l.cfdi_id)
+        if cfdi is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"CFDI {l.cfdi_id} no encontrado")
+        ligas.append((cfdi, l.importe))
+    try:
+        mov = crud.conciliar(db, mov=mov, ligas=ligas, por="manual", nota=payload.nota)
+    except ConciliacionError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc))
+    bitacora_crud.registrar(
+        db, empresa_id=ctx.empresa.id, usuario=ctx.usuario, accion="banco.conciliado",
+        descripcion=f"Movimiento {mov.fecha:%d/%m/%Y} ({mov.monto}) ligado a {len(mov.ligas)} CFDI por {mov.importe_ligado} · {mov.estado}",
+        entidad_tipo="movimiento_bancario", entidad_id=mov.id, metadatos={"cfdis": [str(l.cfdi_id) for l in mov.ligas]},
+    )
+    return crud.a_movimiento_read(mov)
+
+
+@router.delete("/bancos/movimientos/{movimiento_id}/ligas/{cfdi_id}", response_model=MovimientoBancoRead)
+def quitar_liga(movimiento_id: uuid.UUID, cfdi_id: uuid.UUID, ctx: EmpresaContext = Depends(require_permissions("conciliacion.gestionar")), db: Session = Depends(get_db)):
+    """Quita un solo CFDI de un movimiento con varias ligas; el estado se recalcula."""
+    try:
+        return crud.a_movimiento_read(crud.quitar_liga(db, mov=_mov_or_404(db, ctx, movimiento_id), cfdi_id=cfdi_id))
+    except ConciliacionError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc))
 
 
 @router.post("/bancos/movimientos/{movimiento_id}/desconciliar", response_model=MovimientoBancoRead)
@@ -144,9 +174,9 @@ def ignorar(movimiento_id: uuid.UUID, payload: IgnorarRequest, ctx: EmpresaConte
 
 @router.post("/bancos/auto", response_model=AutoConciliarResponse)
 def auto(payload: AutoConciliarRequest, ctx: EmpresaContext = Depends(require_permissions("conciliacion.gestionar")), db: Session = Depends(get_db)):
-    rev, conc, sin, amb = crud.auto_conciliar(db, empresa_id=ctx.empresa.id, cuenta_id=payload.cuenta_id, anio=payload.anio, mes=payload.mes, tolerancia_dias=payload.tolerancia_dias)
-    bitacora_crud.registrar(db, empresa_id=ctx.empresa.id, usuario=ctx.usuario, accion="banco.auto_conciliado", descripcion=f"Conciliación automática: {conc} de {rev} movimientos ligados a CFDI ({amb} ambiguos, {sin} sin coincidencia)")
-    return AutoConciliarResponse(revisados=rev, conciliados=conc, sin_coincidencia=sin, ambiguos=amb)
+    rev, conc, sin, amb, sug = crud.auto_conciliar(db, empresa_id=ctx.empresa.id, cuenta_id=payload.cuenta_id, anio=payload.anio, mes=payload.mes, tolerancia_dias=payload.tolerancia_dias)
+    bitacora_crud.registrar(db, empresa_id=ctx.empresa.id, usuario=ctx.usuario, accion="banco.auto_conciliado", descripcion=f"Conciliación automática: {conc} de {rev} movimientos ligados a CFDI ({amb} ambiguos, {sug} con sugerencias, {sin} sin coincidencia)")
+    return AutoConciliarResponse(revisados=rev, conciliados=conc, sin_coincidencia=sin, ambiguos=amb, con_sugerencias=sug)
 
 
 # ---------- Declaraciones y resumen ----------

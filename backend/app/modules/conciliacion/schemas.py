@@ -2,7 +2,9 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+ESTADOS_MOVIMIENTO = ("pendiente", "parcial", "conciliado", "ignorado")
 
 
 class CuentaCreate(BaseModel):
@@ -23,6 +25,20 @@ class CuentaRead(BaseModel):
     activo: bool
 
 
+class LigaRead(BaseModel):
+    """Un CFDI ligado al movimiento y con cuánto."""
+
+    cfdi_id: uuid.UUID
+    uuid_fiscal: str
+    tipo: str
+    serie_folio: str | None
+    fecha: date
+    nombre_contraparte: str
+    rfc_contraparte: str
+    total: float
+    importe: float
+
+
 class MovimientoBancoRead(BaseModel):
     id: uuid.UUID
     cuenta_id: uuid.UUID
@@ -33,13 +49,15 @@ class MovimientoBancoRead(BaseModel):
     cargo: float
     abono: float
     saldo: float | None
-    estado: str
+    estado: str  # pendiente | parcial | conciliado | ignorado
     conciliado_por: str | None
     nota: str | None
-    cfdi_id: uuid.UUID | None
+    ligas: list[LigaRead]
+    importe_ligado: float
+    restante: float
+    # Resumen para la tabla: contraparte del primer CFDI ligado (o "N CFDI").
     cfdi_uuid: str | None
     cfdi_nombre: str | None
-    cfdi_total: float | None
     archivo_nombre: str | None
     created_at: datetime
 
@@ -59,9 +77,32 @@ class ImportarBancoResponse(BaseModel):
     fecha_max: date | None
 
 
-class ConciliarRequest(BaseModel):
+class LigaInput(BaseModel):
     cfdi_id: uuid.UUID
+    # Sin importe: se aplica lo que quepa (mínimo entre el saldo del CFDI y lo que
+    # le falta al movimiento).
+    importe: Decimal | None = Field(default=None, gt=0)
+
+
+class ConciliarRequest(BaseModel):
+    """`cfdi_id` (1:1, forma corta) o `ligas` (uno o varios CFDI con importe)."""
+
+    cfdi_id: uuid.UUID | None = None
+    ligas: list[LigaInput] = Field(default_factory=list, max_length=50)
     nota: str | None = Field(default=None, max_length=255)
+
+    @model_validator(mode="after")
+    def _al_menos_uno(self):
+        if self.cfdi_id is None and not self.ligas:
+            raise ValueError("Indica cfdi_id o al menos una liga")
+        if self.cfdi_id is not None and not any(l.cfdi_id == self.cfdi_id for l in self.ligas):
+            self.ligas = [LigaInput(cfdi_id=self.cfdi_id), *self.ligas]
+        vistos = set()
+        for l in self.ligas:
+            if l.cfdi_id in vistos:
+                raise ValueError("Hay un CFDI repetido en las ligas")
+            vistos.add(l.cfdi_id)
+        return self
 
 
 class IgnorarRequest(BaseModel):
@@ -72,14 +113,15 @@ class AutoConciliarRequest(BaseModel):
     cuenta_id: uuid.UUID | None = None
     anio: int | None = Field(default=None, ge=2000, le=2100)
     mes: int | None = Field(default=None, ge=1, le=12)
-    tolerancia_dias: int = Field(default=5, ge=0, le=60)
+    tolerancia_dias: int = Field(default=5, ge=0, le=365)
 
 
 class AutoConciliarResponse(BaseModel):
     revisados: int
     conciliados: int
     sin_coincidencia: int
-    ambiguos: int
+    ambiguos: int  # varios CFDI con el monto exacto: el usuario elige
+    con_sugerencias: int  # sin match exacto pero con candidatos similares/parciales o combinaciones
 
 
 class CandidatoCfdi(BaseModel):
@@ -87,12 +129,48 @@ class CandidatoCfdi(BaseModel):
     uuid_fiscal: str
     tipo: str
     direccion: str
+    metodo_pago: str | None
+    serie_folio: str | None
     fecha: date
     nombre_contraparte: str
     rfc_contraparte: str
     total: float
+    pagado_rep: float  # ya cubierto por complementos de pago (facturas PPD)
+    ligado_otros: float  # ya aplicado desde otros movimientos bancarios
+    saldo: float  # total − pagado_rep − ligado_otros: lo que aún se puede ligar
+    diferencia: float  # saldo − restante del movimiento
+    dias: int  # |fecha movimiento − fecha CFDI|
+    pagado_despues: bool  # el movimiento es posterior al CFDI (lo normal)
+    # exacto: saldo == restante · similar: dentro de la tolerancia (comisión/redondeo)
+    # parcial: el CFDI es mayor → el movimiento lo paga en parte (N:1)
+    # menor: el CFDI es menor → se puede combinar con otros (1:N)
+    coincidencia: str
+    contraparte_en_concepto: bool  # el nombre/RFC aparece en el concepto del banco
+    importe_sugerido: float  # lo que se aplicaría al ligarlo solo
+
+
+class Combinacion(BaseModel):
+    """Varios CFDI de la misma contraparte que juntos suman el movimiento (1:N)."""
+
+    cfdi_ids: list[uuid.UUID]
+    rfc_contraparte: str
+    nombre_contraparte: str
+    total: float
     diferencia: float
-    dias: int
+
+
+class MovimientoResumen(BaseModel):
+    id: uuid.UUID
+    fecha: date
+    monto: float
+    importe_ligado: float
+    restante: float
+
+
+class CandidatosResponse(BaseModel):
+    movimiento: MovimientoResumen
+    candidatos: list[CandidatoCfdi]
+    combinaciones: list[Combinacion]
 
 
 class DeclaracionUpsert(BaseModel):
@@ -134,6 +212,7 @@ class ColumnaBanco(BaseModel):
     abonos_conciliados: float
     cargos_conciliados: float
     pendientes: int
+    parciales: int
     conciliados: int
     ignorados: int
     porcentaje_conciliado: float  # por número de movimientos

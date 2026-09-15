@@ -17,6 +17,7 @@ import type { DesgloseIva, IvaPeriodo } from "@/lib/types";
 const DESCRIPCION: Record<string, string> = {
   PUE: "Facturas pagadas en una sola exhibición: el IVA se causa/acredita al emitirse.",
   REP: "Complementos de pago: el IVA de facturas PPD se causa/acredita cuando efectivamente se cobra o paga.",
+  "Pago manual": "Facturas PPD marcadas a mano como cobradas/pagadas (sin REP ni movimiento bancario): entran en la fecha del pago registrado.",
   "PPD pendiente": "Facturas en parcialidades sin complemento de pago: todavía NO entra al cálculo (cuentas por cobrar / pagar).",
   "No considerados": "Canceladas o en proceso de cancelación: excluidas del cálculo.",
 };
@@ -96,8 +97,8 @@ export default function IvaPage() {
       {data && (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <StatTile label="IVA trasladado (cobrado)" value={formatMoney2(data.trasladado_cobrado)} hint={`${periodoTxt} · PUE + REP emitidos`} />
-            <StatTile label="IVA acreditable (pagado)" value={formatMoney2(data.acreditable_pagado)} hint="PUE + REP recibidos" />
+            <StatTile label="IVA trasladado (cobrado)" value={formatMoney2(data.trasladado_cobrado)} hint={`${periodoTxt} · PUE + REP + pago manual emitidos`} />
+            <StatTile label="IVA acreditable (pagado)" value={formatMoney2(data.acreditable_pagado)} hint="PUE + REP + pago manual recibidos" />
             <StatTile
               label={data.saldo >= 0 ? "IVA a cargo" : "IVA a favor"}
               value={formatMoney2(Math.abs(data.saldo))}
@@ -127,7 +128,7 @@ export default function IvaPage() {
 }
 
 function TablaDesglose({ titulo, filas, loading }: { titulo: string; filas: DesgloseIva[]; loading: boolean }) {
-  const consideradas = filas.filter((f) => f.concepto === "PUE" || f.concepto === "REP");
+  const consideradas = filas.filter((f) => f.concepto === "PUE" || f.concepto === "REP" || f.concepto === "Pago manual");
   const totalIva = consideradas.reduce((a, f) => a + f.iva, 0);
   const totalBase = consideradas.reduce((a, f) => a + f.base, 0);
   const totalN = consideradas.reduce((a, f) => a + f.num_cfdis, 0);
@@ -159,7 +160,7 @@ function TablaDesglose({ titulo, filas, loading }: { titulo: string; filas: Desg
               </TableRow>
             ))}
             <TableRow className="font-semibold">
-              <TableCell>Total considerado (PUE + REP)</TableCell>
+              <TableCell>Total considerado (PUE + REP + pago manual)</TableCell>
               <TableCell className="text-right tabular-nums">{totalN}</TableCell>
               <TableCell className="text-right tabular-nums">{formatMoney2(totalBase)}</TableCell>
               <TableCell className="text-right tabular-nums">{formatMoney2(totalIva)}</TableCell>

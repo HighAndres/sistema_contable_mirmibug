@@ -18,7 +18,7 @@ import { ApiError, apiFetch } from "@/lib/api";
 import { exportarExcel } from "@/lib/export-xlsx";
 import { formatMoney2 } from "@/lib/format";
 import { PERM, can } from "@/lib/permissions";
-import type { Catalogo, ConfiguracionFiscal, IsrEjercicio, MecanicaIsr } from "@/lib/types";
+import type { ConfiguracionFiscal, IsrEjercicio, MecanicaIsr, RegimenFiscal } from "@/lib/types";
 
 const MECANICA_LABEL: Record<MecanicaIsr, string> = {
   pm_general: "Persona moral · régimen general (coeficiente de utilidad)",
@@ -39,7 +39,7 @@ export default function IsrPage() {
   // configuración fiscal
   const [openCfg, setOpenCfg] = useState(false);
   const [cfg, setCfg] = useState<ConfiguracionFiscal | null>(null);
-  const [regimenes, setRegimenes] = useState<Catalogo[]>([]);
+  const [regimenes, setRegimenes] = useState<RegimenFiscal[]>([]);
   const [regimen, setRegimen] = useState("");
   const [coef, setCoef] = useState("");
   const [guardando, setGuardando] = useState(false);
@@ -60,10 +60,9 @@ export default function IsrPage() {
 
   async function abrirConfig() {
     setErrorCfg(null);
-    const [c, r] = await Promise.all([
-      apiFetch<ConfiguracionFiscal>("/impuestos/configuracion"),
-      apiFetch<Catalogo[]>("/catalogs/regimen_fiscal").catch(() => [] as Catalogo[]),
-    ]);
+    const c = await apiFetch<ConfiguracionFiscal>("/impuestos/configuracion");
+    // Solo los regímenes que aplican al tipo de persona que define el RFC.
+    const r = await apiFetch<RegimenFiscal[]>(`/tenants/regimenes?tipo_persona=${c.tipo_persona}`).catch(() => [] as RegimenFiscal[]);
     setCfg(c);
     setRegimenes(r);
     setRegimen(c.regimen_fiscal_codigo ?? "");
@@ -245,7 +244,7 @@ export default function IsrPage() {
                 </SelectContent>
               </Select>
             </div>
-            {cfg?.tipo_persona === "moral" && regimen !== "626" && (
+            {regimenes.find((r) => r.codigo === regimen)?.mecanica_isr === "pm_general" && (
               <div className="space-y-1.5">
                 <Label htmlFor="coef">Coeficiente de utilidad (art. 14 LISR)</Label>
                 <Input id="coef" type="number" step="0.0001" min="0" max="1" placeholder="p. ej. 0.1234" value={coef} onChange={(e) => setCoef(e.target.value)} />

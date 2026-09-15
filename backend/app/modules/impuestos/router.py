@@ -5,13 +5,14 @@ Permisos: impuestos.leer (ver) · empresas.editar (configuración fiscal).
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import EmpresaContext, require_permissions
 from app.db.session import get_db
 from app.modules.bitacora import crud as bitacora_crud
 from app.modules.impuestos import calculos, crud
+from app.modules.impuestos.regimenes import validar_regimen
 from app.modules.impuestos.schemas import (
     ConfiguracionFiscalRead,
     ConfiguracionFiscalUpdate,
@@ -114,6 +115,10 @@ def actualizar_configuracion(
     db: Session = Depends(get_db),
 ) -> ConfiguracionFiscalRead:
     cambios = payload.model_dump(exclude_unset=True)
+    if "regimen_fiscal_codigo" in cambios:
+        error = validar_regimen(rfc=ctx.empresa.rfc, regimen_codigo=cambios["regimen_fiscal_codigo"])
+        if error:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, error)
     for k, v in cambios.items():
         setattr(ctx.empresa, k, v)
     db.commit()
