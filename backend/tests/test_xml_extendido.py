@@ -312,3 +312,25 @@ def test_reporte_de_conciliacion(client, seed_rbac, db):
     assert fila["Resultado conciliacion"] == "CONCILIADO"
     assert fila["IVA 16%"] == 800.0 and fila["IVA Exento"] == 1500.0
     assert fila["Estado SAT"] == "VIGENTE"
+
+
+def test_carga_por_partes_acumula_y_no_duplica(client, seed_rbac, db):
+    """El frontend manda la carga en lotes: cada uno se guarda por su cuenta y el
+    siguiente no vuelve a dar de alta lo que ya entró."""
+    headers, empresa = _setup(client, db, seed_rbac)
+
+    primera = _cargar(client, headers, [("mixto.xml", XML_MIXTO.encode()), ("global.xml", XML_GLOBAL.encode())])
+    assert primera["nuevos"] == 2 and primera["duplicados"] == 0
+
+    # El segundo lote repite uno de los anteriores y trae uno nuevo.
+    segunda = _cargar(client, headers, [("mixto-otra-vez.xml", XML_MIXTO.encode()), ("nomina.xml", XML_NOMINA.encode())])
+    assert segunda["nuevos"] == 1 and segunda["duplicados"] == 1
+
+    assert db.query(Cfdi).filter_by(empresa_id=empresa.id).count() == 3
+
+
+def test_duplicados_dentro_del_mismo_lote(client, seed_rbac, db):
+    headers, empresa = _setup(client, db, seed_rbac)
+    r = _cargar(client, headers, [("a.xml", XML_MIXTO.encode()), ("copia.xml", XML_MIXTO.encode())])
+    assert r["nuevos"] == 1 and r["duplicados"] == 1
+    assert db.query(Cfdi).filter_by(empresa_id=empresa.id).count() == 1

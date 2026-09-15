@@ -34,3 +34,10 @@ export function formatUnit(value: number, decimales = 6): string {
 export function formatNumber(value: number): string {
   return NUM.format(value);
 }
+
+/** Tamaño de archivo legible: 8.4 MB, 312 KB. */
+export function formatPeso(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}

@@ -38,10 +38,6 @@ class ResultadoCargaXml:
     uuids: list[str] = field(default_factory=list)
 
 
-def _existe(db: Session, uuid_fiscal: str) -> bool:
-    return db.scalar(select(Cfdi.id).where(Cfdi.uuid_fiscal == uuid_fiscal)) is not None
-
-
 def guardar_cfdi(db: Session, *, empresa: Empresa, x: CfdiXml, origen: str = "xml") -> Cfdi | None:
     """Convierte el XML parseado en filas de la bóveda. None si es ajeno a la empresa."""
     direccion = x.direccion(empresa.rfc)
@@ -193,10 +189,13 @@ def guardar_cfdi(db: Session, *, empresa: Empresa, x: CfdiXml, origen: str = "xm
 
 
 def cargar_archivos(db: Session, *, empresa: Empresa, archivos: list[tuple[str, bytes]]) -> ResultadoCargaXml:
-    """archivos: [(nombre, contenido)] — cada uno .xml o .zip con varios .xml."""
+    """archivos: [(nombre, contenido)] — cada uno .xml o .zip con varios .xml.
+
+    Se parsea todo primero y se consultan los UUID ya existentes de una sola vez:
+    una carga de un ejercicio completo son miles de comprobantes y preguntar uno
+    por uno era una consulta por archivo."""
     res = ResultadoCargaXml()
-    nuevos: list[Cfdi] = []
-    vistos: set[str] = set()
+    parseados: list[tuple[str, CfdiXml]] = []
     for nombre, contenido in archivos:
         try:
             piezas = extraer_xmls(contenido, nombre)
@@ -205,22 +204,28 @@ def cargar_archivos(db: Session, *, empresa: Empresa, archivos: list[tuple[str, 
             continue
         for nombre_xml, datos in piezas:
             try:
-                x = parse_cfdi_xml(datos)
+                parseados.append((nombre_xml, parse_cfdi_xml(datos)))
             except XmlCfdiError as exc:
                 res.errores.append({"archivo": nombre_xml, "error": str(exc)})
-                continue
-            if x.uuid_fiscal in vistos or _existe(db, x.uuid_fiscal):
-                res.duplicados += 1
-                continue
-            cfdi = guardar_cfdi(db, empresa=empresa, x=x)
-            if cfdi is None:
-                res.ajenos += 1
-                res.errores.append({"archivo": nombre_xml, "error": f"El CFDI {x.uuid_fiscal[:8]}… no es de la empresa ({x.rfc_emisor} → {x.rfc_receptor}); se omitió"})
-                continue
-            vistos.add(x.uuid_fiscal)
-            nuevos.append(cfdi)
-            res.nuevos += 1
-            res.uuids.append(x.uuid_fiscal)
+
+    uuids = {x.uuid_fiscal for _, x in parseados}
+    existentes = set(db.scalars(select(Cfdi.uuid_fiscal).where(Cfdi.uuid_fiscal.in_(uuids)))) if uuids else set()
+
+    nuevos: list[Cfdi] = []
+    vistos: set[str] = set()
+    for nombre_xml, x in parseados:
+        if x.uuid_fiscal in vistos or x.uuid_fiscal in existentes:
+            res.duplicados += 1
+            continue
+        cfdi = guardar_cfdi(db, empresa=empresa, x=x)
+        if cfdi is None:
+            res.ajenos += 1
+            res.errores.append({"archivo": nombre_xml, "error": f"El CFDI {x.uuid_fiscal[:8]}… no es de la empresa ({x.rfc_emisor} → {x.rfc_receptor}); se omitió"})
+            continue
+        vistos.add(x.uuid_fiscal)
+        nuevos.append(cfdi)
+        res.nuevos += 1
+        res.uuids.append(x.uuid_fiscal)
     db.commit()
     for c in nuevos:
         db.refresh(c)

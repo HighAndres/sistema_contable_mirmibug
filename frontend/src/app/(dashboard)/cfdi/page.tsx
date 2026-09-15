@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, Download, FileCode2, FileSpreadsheet, FileUp, RefreshCw, Search, SlidersHorizontal, Tags, Undo2, X } from "lucide-react";
 
@@ -16,7 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ApiError, apiDownload, apiFetch } from "@/lib/api";
 import { exportarExcel } from "@/lib/export-xlsx";
-import { formatDate, formatMoney, formatMoney2 } from "@/lib/format";
+import { formatDate, formatMoney, formatMoney2, formatPeso } from "@/lib/format";
 import { PERM, can } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { CLASIFICACIONES } from "@/lib/types";
@@ -105,6 +105,48 @@ const FILTROS_VACIOS: Filtros = {
   concepto: "",
 };
 const PAGE_SIZE = 100;
+
+// La carga de XML va por lotes: un ejercicio completo son miles de archivos y
+// mandarlos en una sola petición deja al contador esperando sin señal, con todo
+// o nada. Cada lote se guarda por su cuenta, así que lo ya cargado no se pierde
+// si uno falla o si se detiene a la mitad.
+const MAX_LOTE_ARCHIVOS = 100;
+const MAX_LOTE_BYTES = 8 * 1024 * 1024;
+// El servidor rechaza cargas de más de 50 MB; un ZIP no se puede partir aquí.
+const MAX_ARCHIVO_BYTES = 50 * 1024 * 1024;
+
+/** Agrupa los XML sueltos por número y peso; cada ZIP va solo en su lote. */
+function armarLotes(archivos: File[]): File[][] {
+  const lotes: File[][] = [];
+  let actual: File[] = [];
+  let bytes = 0;
+  for (const archivo of archivos) {
+    const esZip = /\.zip$/i.test(archivo.name);
+    if (esZip) {
+      if (actual.length) lotes.push(actual);
+      lotes.push([archivo]);
+      actual = [];
+      bytes = 0;
+      continue;
+    }
+    if (actual.length >= MAX_LOTE_ARCHIVOS || (actual.length && bytes + archivo.size > MAX_LOTE_BYTES)) {
+      lotes.push(actual);
+      actual = [];
+      bytes = 0;
+    }
+    actual.push(archivo);
+    bytes += archivo.size;
+  }
+  if (actual.length) lotes.push(actual);
+  return lotes;
+}
+
+interface ProgresoXml {
+  lote: number;
+  lotes: number;
+  archivos: number;
+  total: number;
+}
 
 export default function CfdiPageRoute() {
   const { empresaActiva } = useEmpresa();
@@ -246,23 +288,61 @@ export default function CfdiPageRoute() {
   const [cargandoXml, setCargandoXml] = useState(false);
   const [resXml, setResXml] = useState<CargaXmlResponse | null>(null);
   const [errorXml, setErrorXml] = useState<string | null>(null);
+  const [progresoXml, setProgresoXml] = useState<ProgresoXml | null>(null);
+  // Ref y no estado: el bucle de carga tiene que ver el valor al instante.
+  const detenerXml = useRef(false);
 
   async function cargarXml() {
-    if (!archivosXml || archivosXml.length === 0) {
+    const archivos = Array.from(archivosXml ?? []);
+    if (archivos.length === 0) {
       setErrorXml("Selecciona uno o varios .xml o un .zip");
       return;
     }
+    const grande = archivos.find((a) => a.size > MAX_ARCHIVO_BYTES);
+    if (grande) {
+      setErrorXml(`"${grande.name}" pesa más de 50 MB y el servidor no lo acepta. Pártelo en varios archivos.`);
+      return;
+    }
+
+    const lotes = armarLotes(archivos);
+    detenerXml.current = false;
     setCargandoXml(true);
     setErrorXml(null);
+    setProgresoXml({ lote: 0, lotes: lotes.length, archivos: 0, total: archivos.length });
+
+    // Se va acumulando para que el resumen sea de toda la carga, no del último lote.
+    const acumulado: CargaXmlResponse = { nuevos: 0, duplicados: 0, ajenos: 0, alertas: 0, errores: [] };
+    let procesados = 0;
     try {
-      const form = new FormData();
-      Array.from(archivosXml).forEach((f) => form.append("archivos", f));
-      setResXml(await apiFetch<CargaXmlResponse>("/sat/cargar-xml", { method: "POST", body: form }));
-      await cargar();
-    } catch (err) {
-      setErrorXml(err instanceof ApiError ? err.message : "Error al cargar los XML");
+      for (let i = 0; i < lotes.length; i++) {
+        const lote = lotes[i];
+        if (detenerXml.current) break;
+        setProgresoXml({ lote: i + 1, lotes: lotes.length, archivos: procesados, total: archivos.length });
+        const form = new FormData();
+        lote.forEach((f: File) => form.append("archivos", f));
+        try {
+          const r = await apiFetch<CargaXmlResponse>("/sat/cargar-xml", { method: "POST", body: form });
+          acumulado.nuevos += r.nuevos;
+          acumulado.duplicados += r.duplicados;
+          acumulado.ajenos += r.ajenos;
+          acumulado.alertas += r.alertas;
+          acumulado.errores.push(...r.errores);
+        } catch (err) {
+          // Un lote que falla no tira la carga entera: se anota y sigue el resto.
+          const motivo = err instanceof ApiError ? err.message : "Error al cargar el lote";
+          acumulado.errores.push({ archivo: lote.map((f: File) => f.name).join(", "), error: motivo });
+        }
+        procesados += lote.length;
+        setProgresoXml({ lote: i + 1, lotes: lotes.length, archivos: procesados, total: archivos.length });
+      }
+      setResXml(acumulado);
+      if (detenerXml.current && procesados < archivos.length) {
+        setErrorXml(`Carga detenida: se procesaron ${procesados} de ${archivos.length} archivos. Lo ya cargado se conservó.`);
+      }
+      await Promise.all([cargar(), cargarValores()]);
     } finally {
       setCargandoXml(false);
+      setProgresoXml(null);
     }
   }
 
@@ -399,6 +479,10 @@ export default function CfdiPageRoute() {
   const filtrosAvanzadosActivos =
     (["emisor", "receptor", "concepto"] as const).filter((k) => aplicados[k].trim()).length +
     (["estatus", "metodo", "forma", "clasificacion"] as const).filter((k) => aplicados[k] !== TODOS).length;
+  const archivosLista = Array.from(archivosXml ?? []);
+  const archivosSeleccionados = archivosLista.length;
+  const bytesSeleccionados = archivosLista.reduce((t, a) => t + a.size, 0);
+  const lotesPrevistos = archivosSeleccionados ? armarLotes(archivosLista).length : 0;
   const seleccionablesVisibles = (page?.items ?? []).filter(esClasificable);
   const seleccionadasFueraDePantalla = Array.from(seleccion).filter((id) => !(page?.items ?? []).some((c) => c.id === id)).length;
   // Fecha, UUID, serie/folio, emisor, receptor, método, forma, subtotal, total,
@@ -1134,18 +1218,61 @@ export default function CfdiPageRoute() {
                 </div>
               )}
               <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setArchivosXml(null);
+                    setResXml(null);
+                    setErrorXml(null);
+                  }}
+                >
+                  Cargar más
+                </Button>
                 <Button onClick={() => setOpenXml(false)}>Cerrar</Button>
               </DialogFooter>
             </div>
           ) : (
             <div className="space-y-3">
-              <Input type="file" multiple accept=".xml,.zip,application/xml,text/xml,application/zip" onChange={(e) => setArchivosXml(e.target.files)} />
+              <Input
+                type="file"
+                multiple
+                accept=".xml,.zip,application/xml,text/xml,application/zip"
+                disabled={cargandoXml}
+                onChange={(e) => setArchivosXml(e.target.files)}
+              />
+              {archivosSeleccionados > 0 && !cargandoXml && (
+                <p className="text-xs text-muted-foreground">
+                  {archivosSeleccionados} archivo(s) · {formatPeso(bytesSeleccionados)}
+                  {lotesPrevistos > 1 && ` · se enviarán en ${lotesPrevistos} partes`}
+                </p>
+              )}
+
+              {progresoXml && (
+                <div className="space-y-1">
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full bg-primary transition-all"
+                      style={{ width: `${Math.round((progresoXml.archivos / Math.max(progresoXml.total, 1)) * 100)}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Parte {progresoXml.lote} de {progresoXml.lotes} · {progresoXml.archivos} de {progresoXml.total} archivos
+                  </p>
+                </div>
+              )}
+
               {errorXml && <p className="text-sm text-destructive">{errorXml}</p>}
               <DialogFooter>
-                <Button variant="outline" onClick={() => setOpenXml(false)}>
-                  Cancelar
-                </Button>
-                <Button onClick={cargarXml} disabled={cargandoXml}>
+                {cargandoXml ? (
+                  <Button variant="outline" onClick={() => (detenerXml.current = true)}>
+                    Detener
+                  </Button>
+                ) : (
+                  <Button variant="outline" onClick={() => setOpenXml(false)}>
+                    Cancelar
+                  </Button>
+                )}
+                <Button onClick={cargarXml} disabled={cargandoXml || archivosSeleccionados === 0}>
                   {cargandoXml ? "Cargando…" : "Cargar"}
                 </Button>
               </DialogFooter>
