@@ -400,6 +400,7 @@ export default function CfdiPageRoute() {
     (["emisor", "receptor", "concepto"] as const).filter((k) => aplicados[k].trim()).length +
     (["estatus", "metodo", "forma", "clasificacion"] as const).filter((k) => aplicados[k] !== TODOS).length;
   const seleccionablesVisibles = (page?.items ?? []).filter(esClasificable);
+  const seleccionadasFueraDePantalla = Array.from(seleccion).filter((id) => !(page?.items ?? []).some((c) => c.id === id)).length;
   // Fecha, UUID, serie/folio, emisor, receptor, método, forma, subtotal, total,
   // estatus, pago y clasificación; +1 por la columna "Tipo" y +1 por la casilla.
   const columnas = 12 + (tab === "todos" ? 1 : 0) + (puedeEditar ? 1 : 0);
@@ -642,6 +643,10 @@ export default function CfdiPageRoute() {
       {puedeEditar && seleccion.size > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-md border bg-muted/50 px-4 py-2 text-sm">
           <span className="font-medium">{seleccion.size} seleccionada(s)</span>
+          {/* La selección se conserva al paginar, a propósito: así se clasifica
+              un lote grande de varias páginas. Se avisa para que nadie aplique
+              una clasificación creyendo que solo afecta a lo que está viendo. */}
+          {seleccionadasFueraDePantalla > 0 && <span className="text-muted-foreground">{seleccionadasFueraDePantalla} de otras páginas</span>}
           <Button size="sm" onClick={abrirClasificacionLote}>
             <Tags className="mr-1 h-4 w-4" /> Clasificar
           </Button>
