@@ -30,7 +30,8 @@ const REPORTES: {
   {
     formato: "general",
     titulo: "General",
-    ayuda: "El layout del portal completo, más las columnas del papel de trabajo (deducible, concepto, cuenta contable, referencia y fecha de pago) ya resueltas.",
+    ayuda:
+      "El layout del portal completo, más las columnas del papel de trabajo (deducible, concepto, cuenta contable, referencia y fecha de pago) ya resueltas.",
     hoja: "GENERAL",
   },
   {
@@ -124,19 +125,21 @@ export function ReportesCfdi() {
         <CardTitle className="flex items-center gap-2 text-base">
           <FileSpreadsheet className="h-4 w-4" /> Reportes de CFDI
         </CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Con el mismo layout que el despacho baja de su portal, para pegarlos directo en el papel de trabajo.
-        </p>
+        <p className="text-sm text-muted-foreground">Con el mismo layout que el despacho baja de su portal, para pegarlos directo en el papel de trabajo.</p>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-1">
             <Label htmlFor="rep-anio">Año</Label>
             <Select value={anio} onValueChange={setAnio}>
-              <SelectTrigger id="rep-anio" className="w-[120px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger id="rep-anio" className="w-[120px]">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 {listaAnios.map((a) => (
-                  <SelectItem key={a} value={String(a)}>{a}</SelectItem>
+                  <SelectItem key={a} value={String(a)}>
+                    {a}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -144,11 +147,15 @@ export function ReportesCfdi() {
           <div className="space-y-1">
             <Label htmlFor="rep-mes">Mes</Label>
             <Select value={mes} onValueChange={setMes}>
-              <SelectTrigger id="rep-mes" className="w-[150px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger id="rep-mes" className="w-[150px]">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value={TODOS}>Todo el año</SelectItem>
                 {MESES.map((m, i) => (
-                  <SelectItem key={m} value={String(i + 1)}>{m}</SelectItem>
+                  <SelectItem key={m} value={String(i + 1)}>
+                    {m}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -156,7 +163,9 @@ export function ReportesCfdi() {
           <div className="space-y-1">
             <Label htmlFor="rep-dir">Comprobantes</Label>
             <Select value={direccion} onValueChange={setDireccion}>
-              <SelectTrigger id="rep-dir" className="w-[190px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger id="rep-dir" className="w-[190px]">
+                <SelectValue />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value={TODOS}>Emitidos y recibidos</SelectItem>
                 <SelectItem value="emitido">Emitidos (ingresos)</SelectItem>

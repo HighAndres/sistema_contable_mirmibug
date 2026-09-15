@@ -4,14 +4,7 @@ import { useRef, useState } from "react";
 import { Download, FileUp } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -140,7 +133,9 @@ export function CargaMasivaDialog({
               </div>
             )}
             <DialogFooter>
-              <Button variant="outline" onClick={reset}>Subir otro archivo</Button>
+              <Button variant="outline" onClick={reset}>
+                Subir otro archivo
+              </Button>
               <Button onClick={() => onOpenChange(false)}>Cerrar</Button>
             </DialogFooter>
           </div>
@@ -149,7 +144,11 @@ export function CargaMasivaDialog({
             {endpointPlantilla && (
               <div className="flex items-center justify-between rounded-md border p-3 text-sm">
                 <span className="text-muted-foreground">1. Descarga la plantilla y llénala (o usa tu propio archivo con las mismas columnas).</span>
-                <Button variant="outline" size="sm" onClick={() => apiDownload(endpointPlantilla, nombrePlantilla).catch(() => setError("No se pudo descargar la plantilla"))}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => apiDownload(endpointPlantilla, nombrePlantilla).catch(() => setError("No se pudo descargar la plantilla"))}
+                >
                   <Download className="mr-2 h-4 w-4" /> Plantilla
                 </Button>
               </div>
@@ -157,11 +156,15 @@ export function CargaMasivaDialog({
             <div className="space-y-1.5">
               <Label htmlFor="archivo-carga">{endpointPlantilla ? "2. Archivo" : "Archivo"} (.xlsx o .csv)</Label>
               <Input id="archivo-carga" ref={inputRef} type="file" accept=".xlsx,.xlsm,.csv,.txt" onChange={(e) => setArchivo(e.target.files?.[0] ?? null)} />
-              <p className="text-xs text-muted-foreground">Las columnas se reconocen por nombre (sin importar mayúsculas o acentos); el encabezado puede estar en cualquiera de las primeras filas.</p>
+              <p className="text-xs text-muted-foreground">
+                Las columnas se reconocen por nombre (sin importar mayúsculas o acentos); el encabezado puede estar en cualquiera de las primeras filas.
+              </p>
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <DialogFooter>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Cancelar
+              </Button>
               <Button onClick={importar} disabled={subiendo}>
                 <FileUp className="mr-2 h-4 w-4" /> {subiendo ? "Importando…" : "Importar"}
               </Button>

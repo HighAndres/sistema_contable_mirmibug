@@ -75,8 +75,8 @@ export default function IvaPage() {
         <div>
           <h1 className="text-2xl font-semibold">IVA · previa en base a flujo</h1>
           <p className="text-sm text-muted-foreground">
-            Trasladado efectivamente cobrado menos acreditable efectivamente pagado, con los CFDI de la bóveda. Úsalo para
-            comparar contra lo declarado antes del cierre.
+            Trasladado efectivamente cobrado menos acreditable efectivamente pagado, con los CFDI de la bóveda. Úsalo para comparar contra lo declarado antes
+            del cierre.
           </p>
         </div>
         <Button variant="outline" onClick={exportar} disabled={!data}>
@@ -97,7 +97,11 @@ export default function IvaPage() {
       {data && (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <StatTile label="IVA trasladado (cobrado)" value={formatMoney2(data.trasladado_cobrado)} hint={`${periodoTxt} · PUE + REP + pago manual emitidos`} />
+            <StatTile
+              label="IVA trasladado (cobrado)"
+              value={formatMoney2(data.trasladado_cobrado)}
+              hint={`${periodoTxt} · PUE + REP + pago manual emitidos`}
+            />
             <StatTile label="IVA acreditable (pagado)" value={formatMoney2(data.acreditable_pagado)} hint="PUE + REP + pago manual recibidos" />
             <StatTile
               label={data.saldo >= 0 ? "IVA a cargo" : "IVA a favor"}
@@ -107,8 +111,16 @@ export default function IvaPage() {
             />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <StatTile label="IVA facturado PPD pendiente de cobro" value={formatMoney2(data.trasladado_ppd_pendiente)} hint="Cuentas por cobrar: se causará al recibir el pago (REP)" />
-            <StatTile label="IVA recibido PPD pendiente de pago" value={formatMoney2(data.acreditable_ppd_pendiente)} hint="Cuentas por pagar: se acreditará al pagar (REP)" />
+            <StatTile
+              label="IVA facturado PPD pendiente de cobro"
+              value={formatMoney2(data.trasladado_ppd_pendiente)}
+              hint="Cuentas por cobrar: se causará al recibir el pago (REP)"
+            />
+            <StatTile
+              label="IVA recibido PPD pendiente de pago"
+              value={formatMoney2(data.acreditable_ppd_pendiente)}
+              hint="Cuentas por pagar: se acreditará al pagar (REP)"
+            />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
@@ -117,9 +129,8 @@ export default function IvaPage() {
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Cálculo estimativo con los CFDI sincronizados: no incluye retenciones de IVA, saldos a favor de periodos
-            anteriores, IVA de importación pagado en pedimentos ni proporción de acreditamiento. Los REP se consideran
-            cobrados/pagados en su fecha de emisión.
+            Cálculo estimativo con los CFDI sincronizados: no incluye retenciones de IVA, saldos a favor de periodos anteriores, IVA de importación pagado en
+            pedimentos ni proporción de acreditamiento. Los REP se consideran cobrados/pagados en su fecha de emisión.
           </p>
         </>
       )}

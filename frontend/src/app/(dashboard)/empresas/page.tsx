@@ -68,10 +68,7 @@ export default function EmpresasPage() {
   const tipoPersona = tipoPersonaDeRfc(rfc);
   const rfcValido = RFC_RE.test(rfc);
   // Solo los regímenes que aplican al tipo de persona del RFC capturado.
-  const regimenesAplicables = useMemo(
-    () => (tipoPersona ? regimenes.filter((r) => r.tipos_persona.includes(tipoPersona)) : []),
-    [regimenes, tipoPersona],
-  );
+  const regimenesAplicables = useMemo(() => (tipoPersona ? regimenes.filter((r) => r.tipos_persona.includes(tipoPersona)) : []), [regimenes, tipoPersona]);
   const regimenSel = regimenes.find((r) => r.codigo === regimen) ?? null;
   const pideCoeficiente = tipoPersona === "moral" && regimenSel?.mecanica_isr === "pm_general";
 
@@ -156,9 +153,7 @@ export default function EmpresasPage() {
                 <Badge variant="secondary">{m.rol}</Badge>
               </button>
             ))}
-            {empresas.length === 0 && (
-              <p className="text-sm text-muted-foreground">Aún no perteneces a ninguna empresa.</p>
-            )}
+            {empresas.length === 0 && <p className="text-sm text-muted-foreground">Aún no perteneces a ninguna empresa.</p>}
           </CardContent>
         </Card>
 
@@ -170,13 +165,7 @@ export default function EmpresasPage() {
             <form onSubmit={crearEmpresa} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="rfc">RFC</Label>
-                <Input
-                  id="rfc"
-                  value={rfc}
-                  onChange={(e) => setRfc(e.target.value.toUpperCase().replace(/\s/g, ""))}
-                  maxLength={13}
-                  required
-                />
+                <Input id="rfc" value={rfc} onChange={(e) => setRfc(e.target.value.toUpperCase().replace(/\s/g, ""))} maxLength={13} required />
                 <p className="text-xs text-muted-foreground">
                   {tipoPersona === "moral" && "Persona moral (12 caracteres)."}
                   {tipoPersona === "fisica" && "Persona física (13 caracteres)."}
@@ -196,7 +185,9 @@ export default function EmpresasPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {regimenesAplicables.map((r) => (
-                      <SelectItem key={r.codigo} value={r.codigo}>{r.codigo} · {r.nombre}</SelectItem>
+                      <SelectItem key={r.codigo} value={r.codigo}>
+                        {r.codigo} · {r.nombre}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -217,7 +208,9 @@ export default function EmpresasPage() {
                     value={coeficiente}
                     onChange={(e) => setCoeficiente(e.target.value)}
                   />
-                  <p className="text-xs text-muted-foreground">Utilidad fiscal ÷ ingresos nominales del último ejercicio con utilidad. Se aplica a los ingresos acumulados.</p>
+                  <p className="text-xs text-muted-foreground">
+                    Utilidad fiscal ÷ ingresos nominales del último ejercicio con utilidad. Se aplica a los ingresos acumulados.
+                  </p>
                 </div>
               )}
               {error && <p className="text-sm text-destructive">{error}</p>}
@@ -239,8 +232,7 @@ export default function EmpresasPage() {
               <div className="flex items-center gap-2 text-sm">
                 <CheckCircle2 className="h-4 w-4 text-[color:var(--status-good)]" />
                 <span>
-                  Conectado ({credencial.tipo.toUpperCase()})
-                  {credencial.conectado_at && ` — desde ${formatDate(credencial.conectado_at)}`}
+                  Conectado ({credencial.tipo.toUpperCase()}){credencial.conectado_at && ` — desde ${formatDate(credencial.conectado_at)}`}
                 </span>
               </div>
             ) : (

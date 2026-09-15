@@ -42,7 +42,20 @@ interface Form {
   activo: boolean;
 }
 
-const FORM_VACIO = (tipo: TerceroTipo): Form => ({ rfc: "", nombre: "", tipo, email: "", telefono: "", contacto: "", dias_credito: "0", limite_credito: "", codigo_postal: "", regimen_fiscal_codigo: "", notas: "", activo: true });
+const FORM_VACIO = (tipo: TerceroTipo): Form => ({
+  rfc: "",
+  nombre: "",
+  tipo,
+  email: "",
+  telefono: "",
+  contacto: "",
+  dias_credito: "0",
+  limite_credito: "",
+  codigo_postal: "",
+  regimen_fiscal_codigo: "",
+  notas: "",
+  activo: true,
+});
 
 export function TercerosPage({ tipo }: Props) {
   const { empresaActiva } = useEmpresa();
@@ -108,9 +121,18 @@ export function TercerosPage({ tipo }: Props) {
   function abrirEditar(t: Tercero) {
     setEditId(t.id);
     setForm({
-      rfc: t.rfc, nombre: t.nombre, tipo: t.tipo, email: t.email ?? "", telefono: t.telefono ?? "", contacto: t.contacto ?? "",
-      dias_credito: String(t.dias_credito), limite_credito: t.limite_credito != null ? String(t.limite_credito) : "",
-      codigo_postal: t.codigo_postal ?? "", regimen_fiscal_codigo: t.regimen_fiscal_codigo ?? "", notas: t.notas ?? "", activo: t.activo,
+      rfc: t.rfc,
+      nombre: t.nombre,
+      tipo: t.tipo,
+      email: t.email ?? "",
+      telefono: t.telefono ?? "",
+      contacto: t.contacto ?? "",
+      dias_credito: String(t.dias_credito),
+      limite_credito: t.limite_credito != null ? String(t.limite_credito) : "",
+      codigo_postal: t.codigo_postal ?? "",
+      regimen_fiscal_codigo: t.regimen_fiscal_codigo ?? "",
+      notas: t.notas ?? "",
+      activo: t.activo,
     });
     setErrorForm(null);
     setOpenForm(true);
@@ -120,9 +142,17 @@ export function TercerosPage({ tipo }: Props) {
     setGuardando(true);
     setErrorForm(null);
     const body = {
-      nombre: form.nombre.trim(), tipo: form.tipo, email: form.email.trim() || null, telefono: form.telefono.trim() || null, contacto: form.contacto.trim() || null,
-      dias_credito: Number(form.dias_credito) || 0, limite_credito: form.limite_credito.trim() === "" ? null : Number(form.limite_credito),
-      codigo_postal: form.codigo_postal.trim() || null, regimen_fiscal_codigo: form.regimen_fiscal_codigo.trim() || null, notas: form.notas.trim() || null, activo: form.activo,
+      nombre: form.nombre.trim(),
+      tipo: form.tipo,
+      email: form.email.trim() || null,
+      telefono: form.telefono.trim() || null,
+      contacto: form.contacto.trim() || null,
+      dias_credito: Number(form.dias_credito) || 0,
+      limite_credito: form.limite_credito.trim() === "" ? null : Number(form.limite_credito),
+      codigo_postal: form.codigo_postal.trim() || null,
+      regimen_fiscal_codigo: form.regimen_fiscal_codigo.trim() || null,
+      notas: form.notas.trim() || null,
+      activo: form.activo,
     };
     try {
       if (editId) {
@@ -160,15 +190,33 @@ export function TercerosPage({ tipo }: Props) {
         <div>
           <h1 className="text-2xl font-semibold">{titulo}</h1>
           <p className="text-sm text-muted-foreground">
-            {esCliente ? "A quién le facturas: se detectan solos de los CFDI emitidos." : "A quién le compras: se detectan solos de los CFDI recibidos."} Complementa contacto y condiciones de crédito.
+            {esCliente ? "A quién le facturas: se detectan solos de los CFDI emitidos." : "A quién le compras: se detectan solos de los CFDI recibidos."}{" "}
+            Complementa contacto y condiciones de crédito.
           </p>
         </div>
         {puedeGestionar && (
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={sincronizar} disabled={sincronizando}><RefreshCw className={`mr-2 h-4 w-4 ${sincronizando ? "animate-spin" : ""}`} /> Detectar desde CFDI</Button>
-            <Button variant="outline" onClick={() => setOpenCarga(true)}><FileUp className="mr-2 h-4 w-4" /> Importar Excel</Button>
-            <Button onClick={abrirNuevo}><Plus className="mr-2 h-4 w-4" /> Nuevo {esCliente ? "cliente" : "proveedor"}</Button>
-            <CargaMasivaDialog open={openCarga} onOpenChange={setOpenCarga} titulo={`Importar ${titulo.toLowerCase()} desde Excel`} descripcion="Columnas: RFC, Nombre, Tipo (cliente/proveedor/ambos), Email, Teléfono, Contacto, Días crédito, Límite crédito, Código postal, Régimen, Notas. El RFC existente se actualiza." endpointImportar="/terceros/importar" endpointPlantilla="/terceros/plantilla" nombrePlantilla="plantilla_terceros.xlsx" etiquetaCreados="nuevos" etiquetaActualizados="actualizados" onImportado={() => void cargar()} />
+            <Button variant="outline" onClick={sincronizar} disabled={sincronizando}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${sincronizando ? "animate-spin" : ""}`} /> Detectar desde CFDI
+            </Button>
+            <Button variant="outline" onClick={() => setOpenCarga(true)}>
+              <FileUp className="mr-2 h-4 w-4" /> Importar Excel
+            </Button>
+            <Button onClick={abrirNuevo}>
+              <Plus className="mr-2 h-4 w-4" /> Nuevo {esCliente ? "cliente" : "proveedor"}
+            </Button>
+            <CargaMasivaDialog
+              open={openCarga}
+              onOpenChange={setOpenCarga}
+              titulo={`Importar ${titulo.toLowerCase()} desde Excel`}
+              descripcion="Columnas: RFC, Nombre, Tipo (cliente/proveedor/ambos), Email, Teléfono, Contacto, Días crédito, Límite crédito, Código postal, Régimen, Notas. El RFC existente se actualiza."
+              endpointImportar="/terceros/importar"
+              endpointPlantilla="/terceros/plantilla"
+              nombrePlantilla="plantilla_terceros.xlsx"
+              etiquetaCreados="nuevos"
+              etiquetaActualizados="actualizados"
+              onImportado={() => void cargar()}
+            />
           </div>
         )}
       </div>
@@ -178,7 +226,11 @@ export function TercerosPage({ tipo }: Props) {
       <div className="grid gap-3 sm:grid-cols-3">
         <StatTile label={`${titulo} activos`} value={String(items.length)} hint={`${conSaldo} con saldo pendiente`} />
         <StatTile label={esCliente ? "Facturado últimos 12 meses" : "Comprado últimos 12 meses"} value={formatMoney(total12m)} />
-        <StatTile label={esCliente ? "Por cobrar (PPD sin REP)" : "Por pagar (PPD sin REP)"} value={formatMoney(totalSaldo)} tone={totalSaldo > 0 ? "critical" : "default"} />
+        <StatTile
+          label={esCliente ? "Por cobrar (PPD sin REP)" : "Por pagar (PPD sin REP)"}
+          value={formatMoney(totalSaldo)}
+          tone={totalSaldo > 0 ? "critical" : "default"}
+        />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -187,7 +239,9 @@ export function TercerosPage({ tipo }: Props) {
           <Input className="pl-8" placeholder="Buscar por RFC, nombre, contacto o correo…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <Select value={activo} onValueChange={setActivo}>
-          <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue />
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="true">Activos</SelectItem>
             <SelectItem value="false">Inactivos</SelectItem>
@@ -214,24 +268,45 @@ export function TercerosPage({ tipo }: Props) {
               </TableHeader>
               <TableBody className={loading ? "opacity-50" : ""}>
                 {items.length === 0 && !loading && (
-                  <TableRow><TableCell colSpan={8} className="py-8 text-center text-muted-foreground">Sin {titulo.toLowerCase()}. {puedeGestionar && 'Usa "Detectar desde CFDI" para llenar el catálogo con la bóveda.'}</TableCell></TableRow>
+                  <TableRow>
+                    <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                      Sin {titulo.toLowerCase()}. {puedeGestionar && 'Usa "Detectar desde CFDI" para llenar el catálogo con la bóveda.'}
+                    </TableCell>
+                  </TableRow>
                 )}
                 {items.map((t) => (
                   <TableRow key={t.id} className="cursor-pointer" onClick={() => abrirDetalle(t)}>
                     <TableCell className="font-mono text-xs">{t.rfc}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <span className="max-w-72 truncate" title={t.nombre}>{t.nombre}</span>
-                        {t.es_efos && <Badge variant="destructive" title="RFC en lista de EFOS (art. 69-B)"><AlertTriangle className="mr-1 h-3 w-3" />EFOS</Badge>}
+                        <span className="max-w-72 truncate" title={t.nombre}>
+                          {t.nombre}
+                        </span>
+                        {t.es_efos && (
+                          <Badge variant="destructive" title="RFC en lista de EFOS (art. 69-B)">
+                            <AlertTriangle className="mr-1 h-3 w-3" />
+                            EFOS
+                          </Badge>
+                        )}
                         {t.tipo === "ambos" && <Badge variant="outline">cliente y proveedor</Badge>}
                         {!t.activo && <Badge variant="secondary">inactivo</Badge>}
                       </div>
                     </TableCell>
-                    <TableCell className="text-xs">{t.contacto ?? ""}{t.email ? <span className="block text-muted-foreground">{t.email}</span> : null}</TableCell>
-                    <TableCell className="text-right text-xs tabular-nums">{t.dias_credito ? `${t.dias_credito} días` : "—"}{t.limite_credito != null ? <span className="block text-muted-foreground">{formatMoney(t.limite_credito)}</span> : null}</TableCell>
+                    <TableCell className="text-xs">
+                      {t.contacto ?? ""}
+                      {t.email ? <span className="block text-muted-foreground">{t.email}</span> : null}
+                    </TableCell>
+                    <TableCell className="text-right text-xs tabular-nums">
+                      {t.dias_credito ? `${t.dias_credito} días` : "—"}
+                      {t.limite_credito != null ? <span className="block text-muted-foreground">{formatMoney(t.limite_credito)}</span> : null}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">{t.num_cfdis}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatMoney(t.facturado_12m)}</TableCell>
-                    <TableCell className={`text-right font-medium tabular-nums ${t.saldo_pendiente > 0 ? "text-[color:var(--status-critical)]" : "text-muted-foreground"}`}>{formatMoney(t.saldo_pendiente)}</TableCell>
+                    <TableCell
+                      className={`text-right font-medium tabular-nums ${t.saldo_pendiente > 0 ? "text-[color:var(--status-critical)]" : "text-muted-foreground"}`}
+                    >
+                      {formatMoney(t.saldo_pendiente)}
+                    </TableCell>
                     <TableCell className="whitespace-nowrap text-xs">{t.ultimo_cfdi ? formatDate(t.ultimo_cfdi) : "—"}</TableCell>
                   </TableRow>
                 ))}
@@ -245,33 +320,83 @@ export function TercerosPage({ tipo }: Props) {
       <Dialog open={openForm} onOpenChange={setOpenForm}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>{editId ? "Editar" : "Nuevo"} {form.tipo === "ambos" ? "cliente / proveedor" : form.tipo}</DialogTitle>
+            <DialogTitle>
+              {editId ? "Editar" : "Nuevo"} {form.tipo === "ambos" ? "cliente / proveedor" : form.tipo}
+            </DialogTitle>
             <DialogDescription>Los datos fiscales se toman de los CFDI; aquí se complementan contacto y condiciones comerciales.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5"><Label>RFC</Label><Input value={form.rfc} disabled={!!editId} onChange={(e) => setForm({ ...form, rfc: e.target.value.toUpperCase() })} maxLength={13} /></div>
+            <div className="space-y-1.5">
+              <Label>RFC</Label>
+              <Input value={form.rfc} disabled={!!editId} onChange={(e) => setForm({ ...form, rfc: e.target.value.toUpperCase() })} maxLength={13} />
+            </div>
             <div className="space-y-1.5">
               <Label>Tipo</Label>
               <Select value={form.tipo} onValueChange={(v) => setForm({ ...form, tipo: v as TerceroTipo })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="cliente">Cliente</SelectItem><SelectItem value="proveedor">Proveedor</SelectItem><SelectItem value="ambos">Ambos</SelectItem></SelectContent>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cliente">Cliente</SelectItem>
+                  <SelectItem value="proveedor">Proveedor</SelectItem>
+                  <SelectItem value="ambos">Ambos</SelectItem>
+                </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5 sm:col-span-2"><Label>Nombre / razón social</Label><Input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label>Contacto</Label><Input value={form.contacto} onChange={(e) => setForm({ ...form, contacto: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label>Correo</Label><Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label>Teléfono</Label><Input value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label>Código postal</Label><Input value={form.codigo_postal} maxLength={5} onChange={(e) => setForm({ ...form, codigo_postal: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label>Días de crédito</Label><Input type="number" min={0} value={form.dias_credito} onChange={(e) => setForm({ ...form, dias_credito: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label>Límite de crédito</Label><Input type="number" min={0} step="0.01" value={form.limite_credito} onChange={(e) => setForm({ ...form, limite_credito: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label>Régimen fiscal</Label><Input value={form.regimen_fiscal_codigo} maxLength={3} placeholder="601" onChange={(e) => setForm({ ...form, regimen_fiscal_codigo: e.target.value })} /></div>
-            <div className="flex items-end gap-2 pb-2"><input id="activo" type="checkbox" className="h-4 w-4" checked={form.activo} onChange={(e) => setForm({ ...form, activo: e.target.checked })} /><Label htmlFor="activo">Activo</Label></div>
-            <div className="space-y-1.5 sm:col-span-2"><Label>Notas</Label><Input value={form.notas} onChange={(e) => setForm({ ...form, notas: e.target.value })} /></div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Nombre / razón social</Label>
+              <Input value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Contacto</Label>
+              <Input value={form.contacto} onChange={(e) => setForm({ ...form, contacto: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Correo</Label>
+              <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Teléfono</Label>
+              <Input value={form.telefono} onChange={(e) => setForm({ ...form, telefono: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Código postal</Label>
+              <Input value={form.codigo_postal} maxLength={5} onChange={(e) => setForm({ ...form, codigo_postal: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Días de crédito</Label>
+              <Input type="number" min={0} value={form.dias_credito} onChange={(e) => setForm({ ...form, dias_credito: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Límite de crédito</Label>
+              <Input type="number" min={0} step="0.01" value={form.limite_credito} onChange={(e) => setForm({ ...form, limite_credito: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Régimen fiscal</Label>
+              <Input
+                value={form.regimen_fiscal_codigo}
+                maxLength={3}
+                placeholder="601"
+                onChange={(e) => setForm({ ...form, regimen_fiscal_codigo: e.target.value })}
+              />
+            </div>
+            <div className="flex items-end gap-2 pb-2">
+              <input id="activo" type="checkbox" className="h-4 w-4" checked={form.activo} onChange={(e) => setForm({ ...form, activo: e.target.checked })} />
+              <Label htmlFor="activo">Activo</Label>
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Notas</Label>
+              <Input value={form.notas} onChange={(e) => setForm({ ...form, notas: e.target.value })} />
+            </div>
           </div>
           {errorForm && <p className="text-sm text-destructive">{errorForm}</p>}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpenForm(false)}>Cancelar</Button>
-            <Button onClick={guardar} disabled={guardando || !form.nombre.trim() || (!editId && form.rfc.trim().length < 12)}>{guardando ? "Guardando…" : "Guardar"}</Button>
+            <Button variant="outline" onClick={() => setOpenForm(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={guardar} disabled={guardando || !form.nombre.trim() || (!editId && form.rfc.trim().length < 12)}>
+              {guardando ? "Guardando…" : "Guardar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -287,7 +412,11 @@ export function TercerosPage({ tipo }: Props) {
                   {detalle.es_efos && <Badge variant="destructive">EFOS</Badge>}
                   <Badge variant="outline">{detalle.tipo}</Badge>
                 </DialogTitle>
-                <DialogDescription className="font-mono">{detalle.rfc}{detalle.regimen_fiscal_codigo ? ` · régimen ${detalle.regimen_fiscal_codigo}` : ""}{detalle.codigo_postal ? ` · CP ${detalle.codigo_postal}` : ""}</DialogDescription>
+                <DialogDescription className="font-mono">
+                  {detalle.rfc}
+                  {detalle.regimen_fiscal_codigo ? ` · régimen ${detalle.regimen_fiscal_codigo}` : ""}
+                  {detalle.codigo_postal ? ` · CP ${detalle.codigo_postal}` : ""}
+                </DialogDescription>
               </DialogHeader>
               <Tabs defaultValue="saldos">
                 <TabsList>
@@ -307,7 +436,16 @@ export function TercerosPage({ tipo }: Props) {
                 <TabsContent value="cfdis" className="pt-3">
                   <div className="max-h-96 overflow-auto rounded-md border">
                     <Table>
-                      <TableHeader><TableRow><TableHead>Fecha</TableHead><TableHead>Tipo</TableHead><TableHead>Serie/Folio</TableHead><TableHead>Método</TableHead><TableHead className="text-right">Total</TableHead><TableHead>Estatus</TableHead></TableRow></TableHeader>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Fecha</TableHead>
+                          <TableHead>Tipo</TableHead>
+                          <TableHead>Serie/Folio</TableHead>
+                          <TableHead>Método</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
+                          <TableHead>Estatus</TableHead>
+                        </TableRow>
+                      </TableHeader>
                       <TableBody>
                         {cfdis.map((c) => (
                           <TableRow key={c.id}>
@@ -316,22 +454,47 @@ export function TercerosPage({ tipo }: Props) {
                             <TableCell className="font-mono text-xs">{[c.serie, c.folio].filter(Boolean).join("-") || "—"}</TableCell>
                             <TableCell>{c.metodo_pago_codigo ?? "—"}</TableCell>
                             <TableCell className="text-right tabular-nums">{formatMoney2(c.total)}</TableCell>
-                            <TableCell><Badge variant={c.estatus === "vigente" ? "secondary" : "destructive"}>{c.estatus}</Badge></TableCell>
+                            <TableCell>
+                              <Badge variant={c.estatus === "vigente" ? "secondary" : "destructive"}>{c.estatus}</Badge>
+                            </TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
                     </Table>
                   </div>
-                  <p className="mt-2 text-xs text-muted-foreground">Ver todos con filtros en <Link href="/cfdi" className="underline">CFDI</Link>.</p>
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Ver todos con filtros en{" "}
+                    <Link href="/cfdi" className="underline">
+                      CFDI
+                    </Link>
+                    .
+                  </p>
                 </TabsContent>
                 <TabsContent value="datos" className="pt-3">
                   <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-                    <Fila k="Contacto" v={detalle.contacto ?? "—"} /><Fila k="Correo" v={detalle.email ?? "—"} /><Fila k="Teléfono" v={detalle.telefono ?? "—"} />
-                    <Fila k="Días de crédito" v={String(detalle.dias_credito)} /><Fila k="Límite de crédito" v={detalle.limite_credito != null ? formatMoney(detalle.limite_credito) : "—"} />
-                    <Fila k="Origen" v={detalle.origen === "cfdi" ? "Detectado en la bóveda" : detalle.origen === "excel" ? "Carga masiva" : "Captura manual"} />
+                    <Fila k="Contacto" v={detalle.contacto ?? "—"} />
+                    <Fila k="Correo" v={detalle.email ?? "—"} />
+                    <Fila k="Teléfono" v={detalle.telefono ?? "—"} />
+                    <Fila k="Días de crédito" v={String(detalle.dias_credito)} />
+                    <Fila k="Límite de crédito" v={detalle.limite_credito != null ? formatMoney(detalle.limite_credito) : "—"} />
+                    <Fila
+                      k="Origen"
+                      v={detalle.origen === "cfdi" ? "Detectado en la bóveda" : detalle.origen === "excel" ? "Carga masiva" : "Captura manual"}
+                    />
                     <Fila k="Notas" v={detalle.notas ?? "—"} />
                   </dl>
-                  {puedeGestionar && <Button className="mt-4" variant="outline" onClick={() => { const t = items.find((x) => x.id === detalle.id); if (t) abrirEditar(t); }}>Editar</Button>}
+                  {puedeGestionar && (
+                    <Button
+                      className="mt-4"
+                      variant="outline"
+                      onClick={() => {
+                        const t = items.find((x) => x.id === detalle.id);
+                        if (t) abrirEditar(t);
+                      }}
+                    >
+                      Editar
+                    </Button>
+                  )}
                 </TabsContent>
               </Tabs>
             </>
@@ -343,16 +506,36 @@ export function TercerosPage({ tipo }: Props) {
 }
 
 function Fila({ k, v }: { k: string; v: string }) {
-  return (<div className="flex justify-between gap-3"><dt className="text-muted-foreground">{k}</dt><dd className="text-right">{v}</dd></div>);
+  return (
+    <div className="flex justify-between gap-3">
+      <dt className="text-muted-foreground">{k}</dt>
+      <dd className="text-right">{v}</dd>
+    </div>
+  );
 }
 
 function TablaAntiguedad({ titulo, a }: { titulo: string; a: TerceroDetalle["por_cobrar"] }) {
   return (
     <div className="rounded-md border p-3">
-      <div className="mb-2 flex items-center justify-between text-sm"><span className="font-medium">{titulo}</span><span className="tabular-nums">{formatMoney2(a.total)} · {a.num_cfdis} facturas</span></div>
+      <div className="mb-2 flex items-center justify-between text-sm">
+        <span className="font-medium">{titulo}</span>
+        <span className="tabular-nums">
+          {formatMoney2(a.total)} · {a.num_cfdis} facturas
+        </span>
+      </div>
       <div className="grid grid-cols-4 gap-2 text-center text-xs">
-        {[["0–30 días", a.d0_30], ["31–60", a.d31_60], ["61–90", a.d61_90], ["> 90", a.d90_mas]].map(([k, v]) => (
-          <div key={String(k)} className="rounded-md bg-muted/40 p-2"><p className="text-muted-foreground">{k}</p><p className={`font-semibold tabular-nums ${Number(v) > 0 && String(k) === "> 90" ? "text-[color:var(--status-critical)]" : ""}`}>{formatMoney2(Number(v))}</p></div>
+        {[
+          ["0–30 días", a.d0_30],
+          ["31–60", a.d31_60],
+          ["61–90", a.d61_90],
+          ["> 90", a.d90_mas],
+        ].map(([k, v]) => (
+          <div key={String(k)} className="rounded-md bg-muted/40 p-2">
+            <p className="text-muted-foreground">{k}</p>
+            <p className={`font-semibold tabular-nums ${Number(v) > 0 && String(k) === "> 90" ? "text-[color:var(--status-critical)]" : ""}`}>
+              {formatMoney2(Number(v))}
+            </p>
+          </div>
         ))}
       </div>
     </div>

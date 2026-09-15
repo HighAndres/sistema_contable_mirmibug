@@ -178,17 +178,33 @@ export default function DashboardPage() {
       case "cxc":
         return (
           <Link key={id} href="/cfdi" className="block">
-            <StatTile label="Cuentas por cobrar" value={formatMoney(k.cuentas_por_cobrar.total)} hint={`${k.cuentas_por_cobrar.num_cfdis} facturas PPD sin complemento`} />
+            <StatTile
+              label="Cuentas por cobrar"
+              value={formatMoney(k.cuentas_por_cobrar.total)}
+              hint={`${k.cuentas_por_cobrar.num_cfdis} facturas PPD sin complemento`}
+            />
           </Link>
         );
       case "cxp":
         return (
           <Link key={id} href="/cfdi" className="block">
-            <StatTile label="Cuentas por pagar" value={formatMoney(k.cuentas_por_pagar.total)} hint={`${k.cuentas_por_pagar.num_cfdis} facturas PPD sin complemento`} />
+            <StatTile
+              label="Cuentas por pagar"
+              value={formatMoney(k.cuentas_por_pagar.total)}
+              hint={`${k.cuentas_por_pagar.num_cfdis} facturas PPD sin complemento`}
+            />
           </Link>
         );
       case "alertas":
-        return <StatTile key={id} label="CFDIs con alertas" value={`${k.cfdis_con_alertas} / ${k.cfdis_vigentes}`} tone={k.alertas_altas > 0 ? "critical" : "default"} hint={`${k.alertas_altas} altas · ${k.alertas_medias} medias`} />;
+        return (
+          <StatTile
+            key={id}
+            label="CFDIs con alertas"
+            value={`${k.cfdis_con_alertas} / ${k.cfdis_vigentes}`}
+            tone={k.alertas_altas > 0 ? "critical" : "default"}
+            hint={`${k.alertas_altas} altas · ${k.alertas_medias} medias`}
+          />
+        );
     }
   }
 
@@ -197,19 +213,27 @@ export default function DashboardPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Dashboard fiscal</h1>
-          <p className="text-sm text-muted-foreground">{empresaActiva.empresa.razon_social} · {periodoTxt}</p>
+          <p className="text-sm text-muted-foreground">
+            {empresaActiva.empresa.razon_social} · {periodoTxt}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <PeriodoSelector anio={anio} mes={mes} anios={anios(hoy.getFullYear())} onChange={(a, m) => { setAnio(a); setMes(m); }} />
+          <PeriodoSelector
+            anio={anio}
+            mes={mes}
+            anios={anios(hoy.getFullYear())}
+            onChange={(a, m) => {
+              setAnio(a);
+              setMes(m);
+            }}
+          />
           <Button variant="outline" size="sm" onClick={abrirConfig}>
             <Settings2 className="mr-2 h-4 w-4" /> Personalizar
           </Button>
         </div>
       </div>
 
-      <div className={cn("grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4", loading && "opacity-60")}>
-        {tiles.map(renderTile)}
-      </div>
+      <div className={cn("grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4", loading && "opacity-60")}>{tiles.map(renderTile)}</div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
@@ -237,7 +261,8 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle className="text-base">Alertas de validación</CardTitle>
             <p className="text-xs text-muted-foreground">
-              El motor de reglas revisa cada CFDI sincronizado y marca los que tienen un riesgo fiscal. Estas son las reglas activas y cuántos comprobantes del periodo tocan:
+              El motor de reglas revisa cada CFDI sincronizado y marca los que tienen un riesgo fiscal. Estas son las reglas activas y cuántos comprobantes del
+              periodo tocan:
             </p>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -253,7 +278,9 @@ export default function DashboardPage() {
               {kpis.alertas_por_regla.length === 0 && <li className="text-muted-foreground">Sin alertas en el periodo.</li>}
               {kpis.alertas_por_regla.map((a) => (
                 <li key={a.regla_codigo} className="flex items-start gap-2">
-                  <Badge variant={SEVERIDAD_VARIANT[a.severidad]} className="mt-0.5 shrink-0">{a.cfdis}</Badge>
+                  <Badge variant={SEVERIDAD_VARIANT[a.severidad]} className="mt-0.5 shrink-0">
+                    {a.cfdis}
+                  </Badge>
                   <span className="text-muted-foreground">{a.descripcion}</span>
                 </li>
               ))}
@@ -270,13 +297,19 @@ export default function DashboardPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base"><KeyRound className="h-4 w-4" /> Vigencia de e.firma y sellos</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <KeyRound className="h-4 w-4" /> Vigencia de e.firma y sellos
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {!vigencias || !vigencias.conectado ? (
               <p className="text-sm text-muted-foreground">
                 La empresa no tiene conexión con el SAT.{" "}
-                {puedeCredenciales && <Link href="/empresas" className="text-primary underline">Conéctala en Empresas</Link>}
+                {puedeCredenciales && (
+                  <Link href="/empresas" className="text-primary underline">
+                    Conéctala en Empresas
+                  </Link>
+                )}
               </p>
             ) : (
               <>
@@ -289,10 +322,15 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base"><FileBadge className="h-4 w-4" /> Documentos del SAT</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileBadge className="h-4 w-4" /> Documentos del SAT
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-sm text-muted-foreground">Descarga la constancia de situación fiscal y la opinión de cumplimiento (simulados; con la conexión real se obtienen del portal del SAT con la e.firma).</p>
+            <p className="text-sm text-muted-foreground">
+              Descarga la constancia de situación fiscal y la opinión de cumplimiento (simulados; con la conexión real se obtienen del portal del SAT con la
+              e.firma).
+            </p>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={() => descargar("constancia")} disabled={!!descargando}>
                 <Download className="mr-2 h-4 w-4" /> {descargando === "constancia" ? "Generando…" : "Constancia de situación fiscal"}
@@ -326,8 +364,19 @@ export default function DashboardPage() {
                   </div>
                   {activo && (
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Subir" disabled={idx === 0} onClick={() => mover(id, -1)}><ArrowUp className="h-3.5 w-3.5" /></Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Bajar" disabled={idx === tilesEdit.length - 1} onClick={() => mover(id, 1)}><ArrowDown className="h-3.5 w-3.5" /></Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Subir" disabled={idx === 0} onClick={() => mover(id, -1)}>
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        aria-label="Bajar"
+                        disabled={idx === tilesEdit.length - 1}
+                        onClick={() => mover(id, 1)}
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                   )}
                 </li>
@@ -335,8 +384,12 @@ export default function DashboardPage() {
             })}
           </ul>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setTilesEdit(TILES_DEFAULT)}>Restablecer</Button>
-            <Button variant="outline" onClick={() => setOpenCfg(false)}>Cancelar</Button>
+            <Button variant="ghost" onClick={() => setTilesEdit(TILES_DEFAULT)}>
+              Restablecer
+            </Button>
+            <Button variant="outline" onClick={() => setOpenCfg(false)}>
+              Cancelar
+            </Button>
             <Button onClick={guardarConfig}>Guardar</Button>
           </DialogFooter>
         </DialogContent>
@@ -375,12 +428,18 @@ function TablaTop({ titulo, col, filas }: { titulo: string; col: string; filas: 
           </TableHeader>
           <TableBody>
             {filas.length === 0 && (
-              <TableRow><TableCell colSpan={4} className="py-6 text-center text-muted-foreground">Sin datos en el periodo</TableCell></TableRow>
+              <TableRow>
+                <TableCell colSpan={4} className="py-6 text-center text-muted-foreground">
+                  Sin datos en el periodo
+                </TableCell>
+              </TableRow>
             )}
             {filas.map((c) => (
               <TableRow key={c.rfc}>
                 <TableCell className="font-mono text-xs">{c.rfc}</TableCell>
-                <TableCell className="max-w-64 truncate" title={c.nombre}>{c.nombre}</TableCell>
+                <TableCell className="max-w-64 truncate" title={c.nombre}>
+                  {c.nombre}
+                </TableCell>
                 <TableCell className="text-right">{c.num_cfdis}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatMoney(c.monto_total)}</TableCell>
               </TableRow>
@@ -395,19 +454,25 @@ function TablaTop({ titulo, col, filas }: { titulo: string; col: string; filas: 
 function FilaVigencia({ titulo, v }: { titulo: string; v: VigenciaCertificado }) {
   const variant = v.estado === "vencida" ? "destructive" : v.estado === "por_vencer" ? "warning" : v.estado === "vigente" ? "success" : "secondary";
   const texto =
-    v.estado === "sin_datos" ? "Sin datos" :
-    v.estado === "vencida" ? `Venció hace ${Math.abs(v.dias_restantes ?? 0)} días` :
-    v.estado === "por_vencer" ? `Vence en ${v.dias_restantes} días` :
-    `Vigente · ${v.dias_restantes} días`;
+    v.estado === "sin_datos"
+      ? "Sin datos"
+      : v.estado === "vencida"
+        ? `Venció hace ${Math.abs(v.dias_restantes ?? 0)} días`
+        : v.estado === "por_vencer"
+          ? `Vence en ${v.dias_restantes} días`
+          : `Vigente · ${v.dias_restantes} días`;
   return (
     <div className="flex items-center justify-between gap-3 rounded-md border p-3">
       <div className="min-w-0">
         <p className="text-sm font-medium">{titulo}</p>
         <p className="truncate font-mono text-xs text-muted-foreground">
-          {v.numero_serie ? `Serie ${v.numero_serie}` : "—"}{v.vence ? ` · vence ${formatDate(v.vence)}` : ""}
+          {v.numero_serie ? `Serie ${v.numero_serie}` : "—"}
+          {v.vence ? ` · vence ${formatDate(v.vence)}` : ""}
         </p>
       </div>
-      <Badge variant={variant} className="shrink-0">{texto}</Badge>
+      <Badge variant={variant} className="shrink-0">
+        {texto}
+      </Badge>
     </div>
   );
 }

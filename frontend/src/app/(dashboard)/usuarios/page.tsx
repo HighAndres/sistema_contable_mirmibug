@@ -8,14 +8,7 @@ import { useEmpresa } from "@/components/empresa-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -111,9 +104,7 @@ function SeccionMiembrosEmpresa() {
                   </p>
                   {resultado.password_temporal && (
                     <div className="rounded-md border bg-muted p-3">
-                      <p className="text-muted-foreground">
-                        Cuenta nueva creada. Comparte esta contraseña temporal (no se enviará por correo):
-                      </p>
+                      <p className="text-muted-foreground">Cuenta nueva creada. Comparte esta contraseña temporal (no se enviará por correo):</p>
                       <p className="mt-1 font-mono text-sm">{resultado.password_temporal}</p>
                     </div>
                   )}
@@ -152,8 +143,8 @@ function SeccionMiembrosEmpresa() {
                   </div>
                   {error && <p className="text-sm text-destructive">{error}</p>}
                   <p className="text-xs text-muted-foreground">
-                    Solo se pueden invitar correos que no tengan cuenta todavía (se crea una nueva). Vincular una
-                    cuenta ya existente a esta empresa requiere un superadmin.
+                    Solo se pueden invitar correos que no tengan cuenta todavía (se crea una nueva). Vincular una cuenta ya existente a esta empresa requiere un
+                    superadmin.
                   </p>
                   <DialogFooter>
                     <Button type="submit" disabled={submitting}>
@@ -188,9 +179,7 @@ function SeccionMiembrosEmpresa() {
                       <Badge variant="secondary">{m.rol}</Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={m.is_active ? "success" : "destructive"}>
-                        {m.is_active ? "activo" : "inactivo"}
-                      </Badge>
+                      <Badge variant={m.is_active ? "success" : "destructive"}>{m.is_active ? "activo" : "inactivo"}</Badge>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -286,13 +275,7 @@ function SeccionSuperadmin() {
               </div>
               <div className="space-y-2">
                 <Label>Contraseña</Label>
-                <Input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  minLength={8}
-                  required
-                />
+                <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required />
               </div>
               {error && <p className="text-sm text-destructive">{error}</p>}
               <DialogFooter>
@@ -323,9 +306,7 @@ function SeccionSuperadmin() {
                   <TableCell>{u.nombre_completo ?? "—"}</TableCell>
                   <TableCell>{u.is_superadmin ? "todas" : u.num_empresas}</TableCell>
                   <TableCell>
-                    <Badge variant={u.is_active ? "success" : "destructive"}>
-                      {u.is_active ? "activo" : "inactivo"}
-                    </Badge>
+                    <Badge variant={u.is_active ? "success" : "destructive"}>{u.is_active ? "activo" : "inactivo"}</Badge>
                   </TableCell>
                   <TableCell className="flex justify-end gap-2">
                     {u.id !== user?.id && (
@@ -333,12 +314,7 @@ function SeccionSuperadmin() {
                         <Button variant="outline" size="sm" onClick={() => toggleActivo(u)}>
                           {u.is_active ? "Desactivar" : "Activar"}
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => eliminar(u)}
-                          aria-label={`Eliminar a ${u.email}`}
-                        >
+                        <Button variant="ghost" size="icon" onClick={() => eliminar(u)} aria-label={`Eliminar a ${u.email}`}>
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </>

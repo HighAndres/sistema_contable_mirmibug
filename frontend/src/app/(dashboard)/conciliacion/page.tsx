@@ -156,7 +156,10 @@ export default function ConciliacionPage() {
   async function crearCuenta() {
     setErrorCuenta(null);
     try {
-      await apiFetch("/conciliacion/cuentas", { method: "POST", body: JSON.stringify({ banco: nuevaCuenta.banco, alias: nuevaCuenta.alias, numero: nuevaCuenta.numero || null }) });
+      await apiFetch("/conciliacion/cuentas", {
+        method: "POST",
+        body: JSON.stringify({ banco: nuevaCuenta.banco, alias: nuevaCuenta.alias, numero: nuevaCuenta.numero || null }),
+      });
       setOpenCuenta(false);
       setNuevaCuenta({ banco: "", alias: "", numero: "" });
       await cargarCuentas();
@@ -188,7 +191,12 @@ export default function ConciliacionPage() {
   async function autoConciliar() {
     setAutoLoading(true);
     try {
-      setAutoRes(await apiFetch<AutoConciliarResponse>("/conciliacion/bancos/auto", { method: "POST", body: JSON.stringify({ anio, mes, cuenta_id: cuentaId === TODAS ? null : cuentaId, tolerancia_dias: 5 }) }));
+      setAutoRes(
+        await apiFetch<AutoConciliarResponse>("/conciliacion/bancos/auto", {
+          method: "POST",
+          body: JSON.stringify({ anio, mes, cuenta_id: cuentaId === TODAS ? null : cuentaId, tolerancia_dias: 5 }),
+        }),
+      );
       await Promise.all([cargarMovs(), cargarResumen()]);
     } finally {
       setAutoLoading(false);
@@ -284,9 +292,20 @@ export default function ConciliacionPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Conciliación</h1>
-          <p className="text-sm text-muted-foreground">Compara lo que hay en el SAT (bóveda de CFDI), lo que pasó por el banco y lo que se declaró — {periodoTxt}.</p>
+          <p className="text-sm text-muted-foreground">
+            Compara lo que hay en el SAT (bóveda de CFDI), lo que pasó por el banco y lo que se declaró — {periodoTxt}.
+          </p>
         </div>
-        <PeriodoSelector anio={anio} mes={mes} anios={[hoy.getFullYear(), hoy.getFullYear() - 1]} permitirAnual={false} onChange={(a, m) => { setAnio(a); setMes(m ?? 1); }} />
+        <PeriodoSelector
+          anio={anio}
+          mes={mes}
+          anios={[hoy.getFullYear(), hoy.getFullYear() - 1]}
+          permitirAnual={false}
+          onChange={(a, m) => {
+            setAnio(a);
+            setMes(m ?? 1);
+          }}
+        />
       </div>
 
       <Tabs value={tab} onValueChange={setTab}>
@@ -299,12 +318,28 @@ export default function ConciliacionPage() {
         <TabsContent value="resumen" className="mt-4 space-y-4">
           {resumen && (
             <>
-              <div className={cn("rounded-md border p-3 text-sm", resumen.semaforo === "ok" && "border-emerald-500/40 bg-emerald-500/10", resumen.semaforo === "revisar" && "border-red-500/40 bg-red-500/10", resumen.semaforo === "sin_declaracion" && "border-amber-500/40 bg-amber-500/10")}>
+              <div
+                className={cn(
+                  "rounded-md border p-3 text-sm",
+                  resumen.semaforo === "ok" && "border-emerald-500/40 bg-emerald-500/10",
+                  resumen.semaforo === "revisar" && "border-red-500/40 bg-red-500/10",
+                  resumen.semaforo === "sin_declaracion" && "border-amber-500/40 bg-amber-500/10",
+                )}
+              >
                 {resumen.semaforo === "ok" && "Lo calculado con la bóveda coincide con lo declarado (diferencias < $1)."}
                 {resumen.semaforo === "revisar" && "Hay diferencias entre lo calculado con la bóveda y lo declarado. Revisa antes del cierre."}
                 {resumen.semaforo === "sin_declaracion" && "Aún no se captura lo declarado de este periodo. "}
                 {puedeGestionar && (
-                  <Button size="sm" variant="outline" className="ml-2" onClick={() => { setDecl(resumen.declarado); setErrorDecl(null); setOpenDecl(true); }}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="ml-2"
+                    onClick={() => {
+                      setDecl(resumen.declarado);
+                      setErrorDecl(null);
+                      setOpenDecl(true);
+                    }}
+                  >
                     {resumen.declarado.capturada ? "Editar declaración" : "Capturar declaración"}
                   </Button>
                 )}
@@ -318,14 +353,24 @@ export default function ConciliacionPage() {
                   <Fila k={resumen.sat.iva_saldo >= 0 ? "IVA a cargo" : "IVA a favor"} v={formatMoney2(Math.abs(resumen.sat.iva_saldo))} strong />
                   <Fila k="ISR pago provisional" v={formatMoney2(resumen.sat.isr_estimado)} strong />
                 </Columna>
-                <Columna titulo="Banco · estados de cuenta" sub={`${resumen.banco.num_movimientos} movimientos · ${resumen.banco.porcentaje_conciliado}% conciliado`}>
+                <Columna
+                  titulo="Banco · estados de cuenta"
+                  sub={`${resumen.banco.num_movimientos} movimientos · ${resumen.banco.porcentaje_conciliado}% conciliado`}
+                >
                   <Fila k="Abonos (entradas)" v={formatMoney2(resumen.banco.abonos)} />
                   <Fila k="Abonos ligados a CFDI" v={formatMoney2(resumen.banco.abonos_conciliados)} muted />
                   <Fila k="Cargos (salidas)" v={formatMoney2(resumen.banco.cargos)} />
                   <Fila k="Cargos ligados a CFDI" v={formatMoney2(resumen.banco.cargos_conciliados)} muted />
                   <Fila k="Pendientes / parciales / ignorados" v={`${resumen.banco.pendientes} / ${resumen.banco.parciales} / ${resumen.banco.ignorados}`} />
                 </Columna>
-                <Columna titulo="Declarado al SAT" sub={resumen.declarado.capturada ? `Presentada ${resumen.declarado.fecha_presentacion ? formatDate(resumen.declarado.fecha_presentacion) : ""} ${resumen.declarado.numero_operacion ? `· op. ${resumen.declarado.numero_operacion}` : ""}` : "Sin capturar"}>
+                <Columna
+                  titulo="Declarado al SAT"
+                  sub={
+                    resumen.declarado.capturada
+                      ? `Presentada ${resumen.declarado.fecha_presentacion ? formatDate(resumen.declarado.fecha_presentacion) : ""} ${resumen.declarado.numero_operacion ? `· op. ${resumen.declarado.numero_operacion}` : ""}`
+                      : "Sin capturar"
+                  }
+                >
                   <Fila k="Ingresos declarados" v={fmtN(resumen.declarado.ingresos_declarados)} />
                   <Fila k="Deducciones declaradas" v={fmtN(resumen.declarado.deducciones_declaradas)} muted />
                   <Fila k="IVA declarado" v={fmtN(resumen.declarado.iva_declarado)} strong />
@@ -335,9 +380,15 @@ export default function ConciliacionPage() {
               </div>
 
               <Card>
-                <CardHeader className="pb-2"><CardTitle className="text-base">Diferencias</CardTitle></CardHeader>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Diferencias</CardTitle>
+                </CardHeader>
                 <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <Dif k="Ingresos SAT (con IVA) − abonos banco" v={resumen.diferencias.ingresos_sat_vs_banco} hint="Positivo: cobros facturados que no aparecen en el banco (o PPD sin REP)" />
+                  <Dif
+                    k="Ingresos SAT (con IVA) − abonos banco"
+                    v={resumen.diferencias.ingresos_sat_vs_banco}
+                    hint="Positivo: cobros facturados que no aparecen en el banco (o PPD sin REP)"
+                  />
                   <Dif k="Ingresos SAT − declarados" v={resumen.diferencias.ingresos_sat_vs_declarado} />
                   <Dif k="IVA SAT − declarado" v={resumen.diferencias.iva_sat_vs_declarado} />
                   <Dif k="ISR SAT − declarado" v={resumen.diferencias.isr_sat_vs_declarado} />
@@ -351,14 +402,22 @@ export default function ConciliacionPage() {
         <TabsContent value="bancos" className="mt-4 space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <Select value={cuentaId} onValueChange={setCuentaId}>
-              <SelectTrigger className="w-[220px]"><SelectValue placeholder="Cuenta" /></SelectTrigger>
+              <SelectTrigger className="w-[220px]">
+                <SelectValue placeholder="Cuenta" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value={TODAS}>Todas las cuentas</SelectItem>
-                {cuentas.map((c) => <SelectItem key={c.id} value={c.id}>{c.alias} · {c.banco}</SelectItem>)}
+                {cuentas.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.alias} · {c.banco}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Select value={estado} onValueChange={setEstado}>
-              <SelectTrigger className="w-[170px]"><SelectValue placeholder="Estado" /></SelectTrigger>
+              <SelectTrigger className="w-[170px]">
+                <SelectValue placeholder="Estado" />
+              </SelectTrigger>
               <SelectContent>
                 <SelectItem value={TODAS}>Todos los estados</SelectItem>
                 <SelectItem value="pendiente">Pendientes</SelectItem>
@@ -370,16 +429,41 @@ export default function ConciliacionPage() {
             <div className="ml-auto flex flex-wrap gap-2">
               {puedeGestionar && (
                 <>
-                  <Button variant="outline" onClick={() => { setNuevaCuenta({ banco: "", alias: "", numero: "" }); setErrorCuenta(null); setOpenCuenta(true); }}><Plus className="mr-2 h-4 w-4" /> Cuenta</Button>
-                  <Button variant="outline" onClick={() => { setArchivo(null); setResImport(null); setErrorImport(null); if (inputRef.current) inputRef.current.value = ""; setOpenImport(true); }} disabled={cuentas.length === 0}><FileUp className="mr-2 h-4 w-4" /> Importar estado de cuenta</Button>
-                  <Button onClick={autoConciliar} disabled={autoLoading || !movs?.total}><Sparkles className="mr-2 h-4 w-4" /> {autoLoading ? "Conciliando…" : "Conciliar automáticamente"}</Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setNuevaCuenta({ banco: "", alias: "", numero: "" });
+                      setErrorCuenta(null);
+                      setOpenCuenta(true);
+                    }}
+                  >
+                    <Plus className="mr-2 h-4 w-4" /> Cuenta
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setArchivo(null);
+                      setResImport(null);
+                      setErrorImport(null);
+                      if (inputRef.current) inputRef.current.value = "";
+                      setOpenImport(true);
+                    }}
+                    disabled={cuentas.length === 0}
+                  >
+                    <FileUp className="mr-2 h-4 w-4" /> Importar estado de cuenta
+                  </Button>
+                  <Button onClick={autoConciliar} disabled={autoLoading || !movs?.total}>
+                    <Sparkles className="mr-2 h-4 w-4" /> {autoLoading ? "Conciliando…" : "Conciliar automáticamente"}
+                  </Button>
                 </>
               )}
             </div>
           </div>
           {autoRes && (
             <p className="rounded-md border p-2 text-sm text-muted-foreground">
-              Auto: {autoRes.conciliados} de {autoRes.revisados} pendientes ligados a un CFDI de monto exacto · {autoRes.ambiguos} con varios CFDI del mismo monto (elige a mano) · {autoRes.con_sugerencias} con sugerencias (similares, parciales o varias facturas) · {autoRes.sin_coincidencia} sin coincidencia.
+              Auto: {autoRes.conciliados} de {autoRes.revisados} pendientes ligados a un CFDI de monto exacto · {autoRes.ambiguos} con varios CFDI del mismo
+              monto (elige a mano) · {autoRes.con_sugerencias} con sugerencias (similares, parciales o varias facturas) · {autoRes.sin_coincidencia} sin
+              coincidencia.
             </p>
           )}
 
@@ -402,25 +486,46 @@ export default function ConciliacionPage() {
                   </TableHeader>
                   <TableBody className={loadingMovs ? "opacity-50" : ""}>
                     {movs?.items.length === 0 && (
-                      <TableRow><TableCell colSpan={9} className="py-8 text-center text-muted-foreground">{cuentas.length === 0 ? "Registra una cuenta bancaria e importa su estado de cuenta (Excel o CSV)." : "Sin movimientos en el periodo con esos filtros."}</TableCell></TableRow>
+                      <TableRow>
+                        <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
+                          {cuentas.length === 0
+                            ? "Registra una cuenta bancaria e importa su estado de cuenta (Excel o CSV)."
+                            : "Sin movimientos en el periodo con esos filtros."}
+                        </TableCell>
+                      </TableRow>
                     )}
                     {movs?.items.map((m) => (
                       <TableRow key={m.id} className={puedeGestionar ? "cursor-pointer" : ""} onClick={puedeGestionar ? () => abrirMov(m) : undefined}>
                         <TableCell className="whitespace-nowrap">{formatDate(m.fecha)}</TableCell>
                         <TableCell className="text-xs">{m.cuenta_alias}</TableCell>
-                        <TableCell className="max-w-72 truncate" title={m.concepto}>{m.concepto}</TableCell>
+                        <TableCell className="max-w-72 truncate" title={m.concepto}>
+                          {m.concepto}
+                        </TableCell>
                         <TableCell className="font-mono text-xs">{m.referencia ?? "—"}</TableCell>
                         <TableCell className="text-right tabular-nums text-[color:var(--status-critical)]">{m.cargo ? formatMoney2(m.cargo) : ""}</TableCell>
                         <TableCell className="text-right tabular-nums text-[color:var(--status-good)]">{m.abono ? formatMoney2(m.abono) : ""}</TableCell>
                         <TableCell className="text-right tabular-nums text-muted-foreground">{m.saldo != null ? formatMoney2(m.saldo) : ""}</TableCell>
-                        <TableCell><Badge variant={ESTADO_VARIANT[m.estado]}>{m.estado}{m.conciliado_por === "auto" ? " · auto" : ""}</Badge></TableCell>
+                        <TableCell>
+                          <Badge variant={ESTADO_VARIANT[m.estado]}>
+                            {m.estado}
+                            {m.conciliado_por === "auto" ? " · auto" : ""}
+                          </Badge>
+                        </TableCell>
                         <TableCell className="max-w-56 text-xs" title={m.cfdi_uuid ?? ""}>
                           {m.cfdi_nombre ? (
                             <>
                               <span className="block truncate">{m.cfdi_nombre}</span>
-                              {m.estado === "parcial" && <span className="text-muted-foreground">ligado {formatMoney2(m.importe_ligado)} · faltan {formatMoney2(m.restante)}</span>}
+                              {m.estado === "parcial" && (
+                                <span className="text-muted-foreground">
+                                  ligado {formatMoney2(m.importe_ligado)} · faltan {formatMoney2(m.restante)}
+                                </span>
+                              )}
                             </>
-                          ) : m.nota ? <span className="text-muted-foreground">{m.nota}</span> : "—"}
+                          ) : m.nota ? (
+                            <span className="text-muted-foreground">{m.nota}</span>
+                          ) : (
+                            "—"
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -440,18 +545,43 @@ export default function ConciliacionPage() {
             <DialogDescription>Captura lo que se presentó al SAT para compararlo con lo calculado.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
-            <Campo label="Ingresos declarados" value={decl.ingresos_declarados} onChange={(v) => setDecl({ ...decl, ingresos_declarados: v as number | null })} />
-            <Campo label="Deducciones declaradas" value={decl.deducciones_declaradas} onChange={(v) => setDecl({ ...decl, deducciones_declaradas: v as number | null })} />
-            <Campo label="IVA declarado (a cargo +, a favor −)" value={decl.iva_declarado} onChange={(v) => setDecl({ ...decl, iva_declarado: v as number | null })} />
+            <Campo
+              label="Ingresos declarados"
+              value={decl.ingresos_declarados}
+              onChange={(v) => setDecl({ ...decl, ingresos_declarados: v as number | null })}
+            />
+            <Campo
+              label="Deducciones declaradas"
+              value={decl.deducciones_declaradas}
+              onChange={(v) => setDecl({ ...decl, deducciones_declaradas: v as number | null })}
+            />
+            <Campo
+              label="IVA declarado (a cargo +, a favor −)"
+              value={decl.iva_declarado}
+              onChange={(v) => setDecl({ ...decl, iva_declarado: v as number | null })}
+            />
             <Campo label="ISR declarado" value={decl.isr_declarado} onChange={(v) => setDecl({ ...decl, isr_declarado: v as number | null })} />
-            <div className="space-y-1.5"><Label>Fecha de presentación</Label><Input type="date" value={decl.fecha_presentacion ?? ""} onChange={(e) => setDecl({ ...decl, fecha_presentacion: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label>Número de operación</Label><Input value={decl.numero_operacion ?? ""} onChange={(e) => setDecl({ ...decl, numero_operacion: e.target.value })} /></div>
-            <div className="space-y-1.5 sm:col-span-2"><Label>Notas</Label><Input value={decl.notas ?? ""} onChange={(e) => setDecl({ ...decl, notas: e.target.value })} /></div>
+            <div className="space-y-1.5">
+              <Label>Fecha de presentación</Label>
+              <Input type="date" value={decl.fecha_presentacion ?? ""} onChange={(e) => setDecl({ ...decl, fecha_presentacion: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Número de operación</Label>
+              <Input value={decl.numero_operacion ?? ""} onChange={(e) => setDecl({ ...decl, numero_operacion: e.target.value })} />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Notas</Label>
+              <Input value={decl.notas ?? ""} onChange={(e) => setDecl({ ...decl, notas: e.target.value })} />
+            </div>
           </div>
           {errorDecl && <p className="text-sm text-destructive">{errorDecl}</p>}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpenDecl(false)}>Cancelar</Button>
-            <Button onClick={guardarDecl} disabled={guardandoDecl}>{guardandoDecl ? "Guardando…" : "Guardar"}</Button>
+            <Button variant="outline" onClick={() => setOpenDecl(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={guardarDecl} disabled={guardandoDecl}>
+              {guardandoDecl ? "Guardando…" : "Guardar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -459,16 +589,35 @@ export default function ConciliacionPage() {
       {/* Nueva cuenta */}
       <Dialog open={openCuenta} onOpenChange={setOpenCuenta}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Nueva cuenta bancaria</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Nueva cuenta bancaria</DialogTitle>
+          </DialogHeader>
           <div className="space-y-3">
-            <div className="space-y-1.5"><Label>Banco</Label><Input placeholder="BBVA, Banorte, Santander…" value={nuevaCuenta.banco} onChange={(e) => setNuevaCuenta({ ...nuevaCuenta, banco: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label>Alias</Label><Input placeholder="Cuenta principal" value={nuevaCuenta.alias} onChange={(e) => setNuevaCuenta({ ...nuevaCuenta, alias: e.target.value })} /></div>
-            <div className="space-y-1.5"><Label>Número / CLABE (opcional)</Label><Input value={nuevaCuenta.numero} onChange={(e) => setNuevaCuenta({ ...nuevaCuenta, numero: e.target.value })} /></div>
+            <div className="space-y-1.5">
+              <Label>Banco</Label>
+              <Input
+                placeholder="BBVA, Banorte, Santander…"
+                value={nuevaCuenta.banco}
+                onChange={(e) => setNuevaCuenta({ ...nuevaCuenta, banco: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Alias</Label>
+              <Input placeholder="Cuenta principal" value={nuevaCuenta.alias} onChange={(e) => setNuevaCuenta({ ...nuevaCuenta, alias: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Número / CLABE (opcional)</Label>
+              <Input value={nuevaCuenta.numero} onChange={(e) => setNuevaCuenta({ ...nuevaCuenta, numero: e.target.value })} />
+            </div>
             {errorCuenta && <p className="text-sm text-destructive">{errorCuenta}</p>}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpenCuenta(false)}>Cancelar</Button>
-            <Button onClick={crearCuenta} disabled={!nuevaCuenta.banco || !nuevaCuenta.alias}>Crear</Button>
+            <Button variant="outline" onClick={() => setOpenCuenta(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={crearCuenta} disabled={!nuevaCuenta.banco || !nuevaCuenta.alias}>
+              Crear
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -478,29 +627,56 @@ export default function ConciliacionPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Importar estado de cuenta</DialogTitle>
-            <DialogDescription>Excel (.xlsx) o CSV. Se detectan solas las columnas: fecha, concepto/descripción, referencia, cargo/retiro y abono/depósito (o una columna de importe con signo), saldo. Las filas ya importadas no se duplican.</DialogDescription>
+            <DialogDescription>
+              Excel (.xlsx) o CSV. Se detectan solas las columnas: fecha, concepto/descripción, referencia, cargo/retiro y abono/depósito (o una columna de
+              importe con signo), saldo. Las filas ya importadas no se duplican.
+            </DialogDescription>
           </DialogHeader>
           {resImport ? (
             <div className="space-y-2 text-sm">
-              <p><strong>{resImport.importados}</strong> movimientos importados{resImport.duplicados ? `, ${resImport.duplicados} duplicados omitidos` : ""}{resImport.fecha_min ? ` · del ${formatDate(resImport.fecha_min)} al ${formatDate(resImport.fecha_max!)}` : ""}.</p>
+              <p>
+                <strong>{resImport.importados}</strong> movimientos importados{resImport.duplicados ? `, ${resImport.duplicados} duplicados omitidos` : ""}
+                {resImport.fecha_min ? ` · del ${formatDate(resImport.fecha_min)} al ${formatDate(resImport.fecha_max!)}` : ""}.
+              </p>
               <p className="text-xs text-muted-foreground">Columnas detectadas: {Object.keys(resImport.columnas_detectadas).join(", ")}</p>
-              {resImport.advertencias.map((a) => <p key={a} className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs">{a}</p>)}
-              <DialogFooter><Button onClick={() => setOpenImport(false)}>Cerrar</Button></DialogFooter>
+              {resImport.advertencias.map((a) => (
+                <p key={a} className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
+                  {a}
+                </p>
+              ))}
+              <DialogFooter>
+                <Button onClick={() => setOpenImport(false)}>Cerrar</Button>
+              </DialogFooter>
             </div>
           ) : (
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <Label>Cuenta</Label>
                 <Select value={cuentaImport} onValueChange={setCuentaImport}>
-                  <SelectTrigger><SelectValue placeholder="Cuenta" /></SelectTrigger>
-                  <SelectContent>{cuentas.map((c) => <SelectItem key={c.id} value={c.id}>{c.alias} · {c.banco}</SelectItem>)}</SelectContent>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Cuenta" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {cuentas.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.alias} · {c.banco}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1.5"><Label>Archivo</Label><Input ref={inputRef} type="file" accept=".xlsx,.xlsm,.csv,.txt" onChange={(e) => setArchivo(e.target.files?.[0] ?? null)} /></div>
+              <div className="space-y-1.5">
+                <Label>Archivo</Label>
+                <Input ref={inputRef} type="file" accept=".xlsx,.xlsm,.csv,.txt" onChange={(e) => setArchivo(e.target.files?.[0] ?? null)} />
+              </div>
               {errorImport && <p className="text-sm text-destructive">{errorImport}</p>}
               <DialogFooter>
-                <Button variant="outline" onClick={() => setOpenImport(false)}>Cancelar</Button>
-                <Button onClick={importar} disabled={importando}>{importando ? "Importando…" : "Importar"}</Button>
+                <Button variant="outline" onClick={() => setOpenImport(false)}>
+                  Cancelar
+                </Button>
+                <Button onClick={importar} disabled={importando}>
+                  {importando ? "Importando…" : "Importar"}
+                </Button>
               </DialogFooter>
             </div>
           )}
@@ -515,9 +691,15 @@ export default function ConciliacionPage() {
               <DialogHeader>
                 <DialogTitle className="flex flex-wrap items-center gap-2">
                   {formatDate(movSel.fecha)} · {movSel.abono ? `Abono ${formatMoney2(movSel.abono)}` : `Cargo ${formatMoney2(movSel.cargo)}`}
-                  <Badge variant={ESTADO_VARIANT[movSel.estado]}>{movSel.estado}{movSel.conciliado_por === "auto" ? " · auto" : ""}</Badge>
+                  <Badge variant={ESTADO_VARIANT[movSel.estado]}>
+                    {movSel.estado}
+                    {movSel.conciliado_por === "auto" ? " · auto" : ""}
+                  </Badge>
                 </DialogTitle>
-                <DialogDescription>{movSel.concepto}{movSel.referencia ? ` · ref. ${movSel.referencia}` : ""} · {movSel.cuenta_alias}</DialogDescription>
+                <DialogDescription>
+                  {movSel.concepto}
+                  {movSel.referencia ? ` · ref. ${movSel.referencia}` : ""} · {movSel.cuenta_alias}
+                </DialogDescription>
               </DialogHeader>
               {/* min-w-0: sin esto la tabla ancha estira la columna del grid del diálogo y se sale del panel */}
               <div className="min-w-0 space-y-4">
@@ -529,20 +711,36 @@ export default function ConciliacionPage() {
                         {movSel.ligas.length === 1 ? "Ligado a 1 CFDI" : `Ligado a ${movSel.ligas.length} CFDI`} · {formatMoney2(movSel.importe_ligado)}
                         {movSel.restante > TOL && <span className="ml-2 font-normal text-muted-foreground">faltan {formatMoney2(movSel.restante)}</span>}
                       </p>
-                      <Button size="sm" variant="outline" onClick={() => accion("desconciliar")} disabled={accionLoading}><Unlink className="mr-2 h-4 w-4" /> Desconciliar todo</Button>
+                      <Button size="sm" variant="outline" onClick={() => accion("desconciliar")} disabled={accionLoading}>
+                        <Unlink className="mr-2 h-4 w-4" /> Desconciliar todo
+                      </Button>
                     </div>
                     <Table>
                       <TableBody>
                         {movSel.ligas.map((l) => (
                           <TableRow key={l.cfdi_id}>
                             <TableCell className="whitespace-nowrap text-xs">{formatDate(l.fecha)}</TableCell>
-                            <TableCell><span className="block max-w-64 truncate text-sm">{l.nombre_contraparte}</span><span className="font-mono text-xs text-muted-foreground" title={l.uuid_fiscal}>{l.serie_folio ?? l.uuid_fiscal.slice(0, 8)} · {l.tipo}</span></TableCell>
+                            <TableCell>
+                              <span className="block max-w-64 truncate text-sm">{l.nombre_contraparte}</span>
+                              <span className="font-mono text-xs text-muted-foreground" title={l.uuid_fiscal}>
+                                {l.serie_folio ?? l.uuid_fiscal.slice(0, 8)} · {l.tipo}
+                              </span>
+                            </TableCell>
                             <TableCell className="text-right tabular-nums">
                               {formatMoney2(l.importe)}
                               {Math.abs(l.importe - l.total) > TOL && <span className="block text-xs text-muted-foreground">de {formatMoney2(l.total)}</span>}
                             </TableCell>
                             <TableCell className="w-10 text-right">
-                              <Button size="icon" variant="ghost" className="h-7 w-7" title="Quitar esta liga" onClick={() => accion(`ligas/${l.cfdi_id}`, { method: "DELETE", mantener: true })} disabled={accionLoading}><X className="h-4 w-4" /></Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7"
+                                title="Quitar esta liga"
+                                onClick={() => accion(`ligas/${l.cfdi_id}`, { method: "DELETE", mantener: true })}
+                                disabled={accionLoading}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -557,16 +755,39 @@ export default function ConciliacionPage() {
                     <div className="flex flex-wrap items-end gap-2">
                       <div className="min-w-56 flex-1 space-y-1.5">
                         <Label>Buscar CFDI</Label>
-                        <Input placeholder="Cliente, RFC, folio o UUID (ignora el monto)" value={qCand} onChange={(e) => setQCand(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void cargarCandidatos(movSel, { q: qCand, dias: ventana }); }} />
+                        <Input
+                          placeholder="Cliente, RFC, folio o UUID (ignora el monto)"
+                          value={qCand}
+                          onChange={(e) => setQCand(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") void cargarCandidatos(movSel, { q: qCand, dias: ventana });
+                          }}
+                        />
                       </div>
                       <div className="space-y-1.5">
                         <Label>Ventana</Label>
-                        <Select value={String(ventana)} onValueChange={(v) => { setVentana(Number(v)); void cargarCandidatos(movSel, { q: qCand, dias: Number(v) }); }}>
-                          <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
-                          <SelectContent>{VENTANAS.map((v) => <SelectItem key={v.dias} value={String(v.dias)}>{v.label}</SelectItem>)}</SelectContent>
+                        <Select
+                          value={String(ventana)}
+                          onValueChange={(v) => {
+                            setVentana(Number(v));
+                            void cargarCandidatos(movSel, { q: qCand, dias: Number(v) });
+                          }}
+                        >
+                          <SelectTrigger className="w-[150px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {VENTANAS.map((v) => (
+                              <SelectItem key={v.dias} value={String(v.dias)}>
+                                {v.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
                         </Select>
                       </div>
-                      <Button variant="outline" onClick={() => cargarCandidatos(movSel, { q: qCand, dias: ventana })} disabled={buscando}><Search className="mr-2 h-4 w-4" /> Buscar</Button>
+                      <Button variant="outline" onClick={() => cargarCandidatos(movSel, { q: qCand, dias: ventana })} disabled={buscando}>
+                        <Search className="mr-2 h-4 w-4" /> Buscar
+                      </Button>
                     </div>
 
                     {cand && cand.combinaciones.length > 0 && (
@@ -575,15 +796,21 @@ export default function ConciliacionPage() {
                         <div className="flex flex-wrap gap-2">
                           {cand.combinaciones.map((co, i) => (
                             <Button key={i} size="sm" variant="outline" onClick={() => aplicarCombo(co)}>
-                              {co.cfdi_ids.length} CFDI · <span className="mx-1 max-w-40 truncate">{co.nombre_contraparte}</span> · {formatMoney2(co.total)}{Math.abs(co.diferencia) > TOL ? ` (${co.diferencia > 0 ? "+" : ""}${formatMoney2(co.diferencia)})` : ""}
+                              {co.cfdi_ids.length} CFDI · <span className="mx-1 max-w-40 truncate">{co.nombre_contraparte}</span> · {formatMoney2(co.total)}
+                              {Math.abs(co.diferencia) > TOL ? ` (${co.diferencia > 0 ? "+" : ""}${formatMoney2(co.diferencia)})` : ""}
                             </Button>
                           ))}
                         </div>
                       </div>
                     )}
 
-                    {buscando || cand === null ? <p className="text-sm text-muted-foreground">Buscando…</p> : cand.candidatos.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">Ningún CFDI vigente con saldo coincide. Amplía la ventana, busca por cliente o folio, o si es comisión, traspaso, intereses o un depósito sin factura, márcalo como ignorado.</p>
+                    {buscando || cand === null ? (
+                      <p className="text-sm text-muted-foreground">Buscando…</p>
+                    ) : cand.candidatos.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        Ningún CFDI vigente con saldo coincide. Amplía la ventana, busca por cliente o folio, o si es comisión, traspaso, intereses o un
+                        depósito sin factura, márcalo como ignorado.
+                      </p>
                     ) : (
                       <div className="overflow-x-auto rounded-md border">
                         <Table>
@@ -606,37 +833,79 @@ export default function ConciliacionPage() {
                               return (
                                 <TableRow key={c.cfdi_id} className={cn("cursor-pointer", marcado && "bg-muted/50")} onClick={() => toggleSel(c)}>
                                   <TableCell onClick={(e) => e.stopPropagation()}>
-                                    <input type="checkbox" className="h-4 w-4 accent-primary" checked={marcado} onChange={() => toggleSel(c)} aria-label="Seleccionar CFDI" />
+                                    <input
+                                      type="checkbox"
+                                      className="h-4 w-4 accent-primary"
+                                      checked={marcado}
+                                      onChange={() => toggleSel(c)}
+                                      aria-label="Seleccionar CFDI"
+                                    />
                                   </TableCell>
-                                  <TableCell><Badge variant={info.variant} title={info.hint}>{info.label}</Badge></TableCell>
+                                  <TableCell>
+                                    <Badge variant={info.variant} title={info.hint}>
+                                      {info.label}
+                                    </Badge>
+                                  </TableCell>
                                   <TableCell className="whitespace-nowrap">
                                     {formatDate(c.fecha)}
-                                    <span className="block text-xs text-muted-foreground">{c.dias === 0 ? "mismo día" : `${c.dias} días ${c.pagado_despues ? "antes del pago" : "después del pago"}`}</span>
+                                    <span className="block text-xs text-muted-foreground">
+                                      {c.dias === 0 ? "mismo día" : `${c.dias} días ${c.pagado_despues ? "antes del pago" : "después del pago"}`}
+                                    </span>
                                   </TableCell>
                                   <TableCell>
                                     <span className="block max-w-56 truncate" title={c.nombre_contraparte}>
-                                      {c.contraparte_en_concepto && <span className="mr-1 text-[color:var(--status-good)]" title="El nombre o RFC aparece en el concepto del banco">●</span>}
+                                      {c.contraparte_en_concepto && (
+                                        <span className="mr-1 text-[color:var(--status-good)]" title="El nombre o RFC aparece en el concepto del banco">
+                                          ●
+                                        </span>
+                                      )}
                                       {c.nombre_contraparte}
                                     </span>
                                     <span className="font-mono text-xs text-muted-foreground">{c.rfc_contraparte}</span>
                                   </TableCell>
                                   <TableCell className="text-xs">
-                                    <span className="capitalize">{c.tipo}</span>{c.metodo_pago ? ` · ${c.metodo_pago}` : ""}
-                                    <span className="block font-mono text-muted-foreground" title={c.uuid_fiscal}>{c.serie_folio ?? c.uuid_fiscal.slice(0, 8)}</span>
+                                    <span className="capitalize">{c.tipo}</span>
+                                    {c.metodo_pago ? ` · ${c.metodo_pago}` : ""}
+                                    <span className="block font-mono text-muted-foreground" title={c.uuid_fiscal}>
+                                      {c.serie_folio ?? c.uuid_fiscal.slice(0, 8)}
+                                    </span>
                                   </TableCell>
                                   <TableCell className="text-right tabular-nums">
                                     {formatMoney2(c.saldo)}
-                                    {Math.abs(c.saldo - c.total) > TOL && <span className="block text-xs text-muted-foreground" title={`REP ${formatMoney2(c.pagado_rep)} · otros movimientos ${formatMoney2(c.ligado_otros)}`}>de {formatMoney2(c.total)}</span>}
+                                    {Math.abs(c.saldo - c.total) > TOL && (
+                                      <span
+                                        className="block text-xs text-muted-foreground"
+                                        title={`REP ${formatMoney2(c.pagado_rep)} · otros movimientos ${formatMoney2(c.ligado_otros)}`}
+                                      >
+                                        de {formatMoney2(c.total)}
+                                      </span>
+                                    )}
                                   </TableCell>
                                   <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                                     {marcado ? (
-                                      <Input type="number" step="0.01" min="0.01" max={c.saldo} className="ml-auto h-8 w-32 text-right tabular-nums" value={sel[c.cfdi_id]} onChange={(e) => setSel({ ...sel, [c.cfdi_id]: Number(e.target.value) })} />
+                                      <Input
+                                        type="number"
+                                        step="0.01"
+                                        min="0.01"
+                                        max={c.saldo}
+                                        className="ml-auto h-8 w-32 text-right tabular-nums"
+                                        value={sel[c.cfdi_id]}
+                                        onChange={(e) => setSel({ ...sel, [c.cfdi_id]: Number(e.target.value) })}
+                                      />
                                     ) : (
                                       <span className="text-xs text-muted-foreground">{formatMoney2(c.importe_sugerido)}</span>
                                     )}
                                   </TableCell>
                                   <TableCell onClick={(e) => e.stopPropagation()}>
-                                    <Button size="sm" variant="ghost" title="Ligar solo este CFDI" onClick={() => ligarSeleccion([c.cfdi_id])} disabled={accionLoading}><Link2 className="h-4 w-4" /></Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      title="Ligar solo este CFDI"
+                                      onClick={() => ligarSeleccion([c.cfdi_id])}
+                                      disabled={accionLoading}
+                                    >
+                                      <Link2 className="h-4 w-4" />
+                                    </Button>
                                   </TableCell>
                                 </TableRow>
                               );
@@ -651,13 +920,27 @@ export default function ConciliacionPage() {
                         Falta explicar <strong className="tabular-nums">{formatMoney2(restante)}</strong>
                         {Object.keys(sel).length > 0 && (
                           <>
-                            {" "}· seleccionados {Object.keys(sel).length} por <strong className="tabular-nums">{formatMoney2(sumaSel)}</strong>
-                            {" "}· después quedará{" "}
-                            <strong className={cn("tabular-nums", Math.abs(restanteTrasSel) <= TOL ? "text-[color:var(--status-good)]" : restanteTrasSel < 0 ? "text-[color:var(--status-critical)]" : "")}>{formatMoney2(restanteTrasSel)}</strong>
+                            {" "}
+                            · seleccionados {Object.keys(sel).length} por <strong className="tabular-nums">{formatMoney2(sumaSel)}</strong> · después quedará{" "}
+                            <strong
+                              className={cn(
+                                "tabular-nums",
+                                Math.abs(restanteTrasSel) <= TOL
+                                  ? "text-[color:var(--status-good)]"
+                                  : restanteTrasSel < 0
+                                    ? "text-[color:var(--status-critical)]"
+                                    : "",
+                              )}
+                            >
+                              {formatMoney2(restanteTrasSel)}
+                            </strong>
                           </>
                         )}
                       </p>
-                      <Button onClick={() => ligarSeleccion()} disabled={accionLoading || Object.keys(sel).length === 0 || restanteTrasSel < -TOL || Object.values(sel).some((v) => !(v > 0))}>
+                      <Button
+                        onClick={() => ligarSeleccion()}
+                        disabled={accionLoading || Object.keys(sel).length === 0 || restanteTrasSel < -TOL || Object.values(sel).some((v) => !(v > 0))}
+                      >
                         <Link2 className="mr-2 h-4 w-4" /> Ligar {Object.keys(sel).length > 1 ? `${Object.keys(sel).length} CFDI` : "seleccionado"}
                       </Button>
                     </div>
@@ -667,11 +950,18 @@ export default function ConciliacionPage() {
                 {/* Ignorar / volver a pendiente */}
                 {movSel.ligas.length === 0 && (
                   <div className="flex items-end gap-2 border-t pt-3">
-                    <div className="flex-1 space-y-1.5"><Label>Nota (para ignorar)</Label><Input placeholder="Comisión bancaria, traspaso entre cuentas…" value={notaIgnorar} onChange={(e) => setNotaIgnorar(e.target.value)} /></div>
+                    <div className="flex-1 space-y-1.5">
+                      <Label>Nota (para ignorar)</Label>
+                      <Input placeholder="Comisión bancaria, traspaso entre cuentas…" value={notaIgnorar} onChange={(e) => setNotaIgnorar(e.target.value)} />
+                    </div>
                     {movSel.estado === "ignorado" ? (
-                      <Button variant="outline" onClick={() => accion("desconciliar")} disabled={accionLoading}><CheckCircle2 className="mr-2 h-4 w-4" /> Volver a pendiente</Button>
+                      <Button variant="outline" onClick={() => accion("desconciliar")} disabled={accionLoading}>
+                        <CheckCircle2 className="mr-2 h-4 w-4" /> Volver a pendiente
+                      </Button>
                     ) : (
-                      <Button variant="outline" onClick={() => accion("ignorar", { body: { nota: notaIgnorar || null } })} disabled={accionLoading}><XCircle className="mr-2 h-4 w-4" /> Ignorar</Button>
+                      <Button variant="outline" onClick={() => accion("ignorar", { body: { nota: notaIgnorar || null } })} disabled={accionLoading}>
+                        <XCircle className="mr-2 h-4 w-4" /> Ignorar
+                      </Button>
                     )}
                   </div>
                 )}
@@ -692,8 +982,13 @@ function fmtN(v: number | null | undefined) {
 function Columna({ titulo, sub, children }: { titulo: string; sub?: string; children: React.ReactNode }) {
   return (
     <Card>
-      <CardHeader className="pb-2"><CardTitle className="text-base">{titulo}</CardTitle>{sub && <p className="text-xs text-muted-foreground">{sub}</p>}</CardHeader>
-      <CardContent><dl className="space-y-1.5 text-sm">{children}</dl></CardContent>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">{titulo}</CardTitle>
+        {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+      </CardHeader>
+      <CardContent>
+        <dl className="space-y-1.5 text-sm">{children}</dl>
+      </CardContent>
     </Card>
   );
 }
@@ -712,7 +1007,14 @@ function Dif({ k, v, hint }: { k: string; v: number | null; hint?: string }) {
   return (
     <div className="rounded-md border p-3">
       <p className="text-xs text-muted-foreground">{k}</p>
-      <p className={cn("text-lg font-semibold tabular-nums", v == null ? "text-muted-foreground" : ok ? "text-[color:var(--status-good)]" : "text-[color:var(--status-critical)]")}>{v == null ? "sin declarar" : formatMoney2(v)}</p>
+      <p
+        className={cn(
+          "text-lg font-semibold tabular-nums",
+          v == null ? "text-muted-foreground" : ok ? "text-[color:var(--status-good)]" : "text-[color:var(--status-critical)]",
+        )}
+      >
+        {v == null ? "sin declarar" : formatMoney2(v)}
+      </p>
       {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   );

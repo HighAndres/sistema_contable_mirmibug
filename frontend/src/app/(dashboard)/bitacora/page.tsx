@@ -46,9 +46,7 @@ export default function BitacoraPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-semibold">Bitácora</h1>
-        <p className="text-sm text-muted-foreground">
-          Qué hizo cada usuario en {empresaActiva.empresa.razon_social}
-        </p>
+        <p className="text-sm text-muted-foreground">Qué hizo cada usuario en {empresaActiva.empresa.razon_social}</p>
       </div>
 
       <Card>
@@ -73,9 +71,7 @@ export default function BitacoraPage() {
               {!loading &&
                 entradas.map((e) => (
                   <TableRow key={e.id}>
-                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                      {formatFechaHora(e.created_at)}
-                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-sm text-muted-foreground">{formatFechaHora(e.created_at)}</TableCell>
                     <TableCell className="text-sm">{e.usuario_email}</TableCell>
                     <TableCell>
                       <Badge variant="secondary">{ACCION_LABEL[e.accion] ?? e.accion}</Badge>

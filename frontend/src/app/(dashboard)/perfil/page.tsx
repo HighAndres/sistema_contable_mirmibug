@@ -56,9 +56,7 @@ export default function PerfilPage() {
             <span className="text-muted-foreground">Correo: </span>
             {user.email}
           </p>
-          {user.is_superadmin && (
-            <p className="text-muted-foreground">Cuenta de superadmin (acceso a todas las empresas).</p>
-          )}
+          {user.is_superadmin && <p className="text-muted-foreground">Cuenta de superadmin (acceso a todas las empresas).</p>}
         </CardContent>
       </Card>
 
@@ -70,24 +68,11 @@ export default function PerfilPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="current">Contraseña actual</Label>
-              <Input
-                id="current"
-                type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                required
-              />
+              <Input id="current" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
             </div>
             <div className="space-y-2">
               <Label htmlFor="new">Contraseña nueva</Label>
-              <Input
-                id="new"
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                required
-                minLength={8}
-              />
+              <Input id="new" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={8} />
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             {ok && <p className="text-sm text-[color:var(--status-good)]">Contraseña actualizada.</p>}

@@ -52,11 +52,7 @@ export function EmpresaProvider({ children }: { children: React.ReactNode }) {
 
   const empresaActiva = empresas.find((m) => m.empresa.id === empresaActivaId) ?? null;
 
-  return (
-    <EmpresaContext.Provider value={{ empresas, empresaActiva, loading, seleccionarEmpresa, refresh: cargar }}>
-      {children}
-    </EmpresaContext.Provider>
-  );
+  return <EmpresaContext.Provider value={{ empresas, empresaActiva, loading, seleccionarEmpresa, refresh: cargar }}>{children}</EmpresaContext.Provider>;
 }
 
 export function useEmpresa() {

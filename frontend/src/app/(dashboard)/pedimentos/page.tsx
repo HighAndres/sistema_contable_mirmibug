@@ -9,14 +9,7 @@ import { useEmpresa } from "@/components/empresa-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -102,8 +95,7 @@ export default function PedimentosPage() {
         <div>
           <h1 className="text-2xl font-semibold">Pedimentos de importación</h1>
           <p className="text-sm text-muted-foreground">
-            Costeo de importación por partida: sube el archivo M3 (.003) del agente aduanal y el sistema
-            calcula DTA, IGI, gastos y utilidad por pieza.
+            Costeo de importación por partida: sube el archivo M3 (.003) del agente aduanal y el sistema calcula DTA, IGI, gastos y utilidad por pieza.
           </p>
         </div>
         {puedeGestionar && (
@@ -137,12 +129,7 @@ export default function PedimentosPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          placeholder="Buscar por número, referencia o proveedor…"
-          value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
-          className="w-72"
-        />
+        <Input placeholder="Buscar por número, referencia o proveedor…" value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="w-72" />
         <Select value={filtroEstatus} onValueChange={setFiltroEstatus}>
           <SelectTrigger className="w-44">
             <SelectValue placeholder="Estatus" />
@@ -190,11 +177,7 @@ export default function PedimentosPage() {
                   </TableRow>
                 ) : (
                   pedimentos.map((p) => (
-                    <TableRow
-                      key={p.id}
-                      className="cursor-pointer"
-                      onClick={() => router.push(`/pedimentos/${p.id}`)}
-                    >
+                    <TableRow key={p.id} className="cursor-pointer" onClick={() => router.push(`/pedimentos/${p.id}`)}>
                       <TableCell className="font-mono text-sm font-medium">{p.numero_completo}</TableCell>
                       <TableCell>{p.referencia ?? <span className="text-muted-foreground">—</span>}</TableCell>
                       <TableCell>{p.fecha_pago ? formatDate(p.fecha_pago) : "—"}</TableCell>
@@ -208,9 +191,7 @@ export default function PedimentosPage() {
                       <TableCell className="text-right tabular-nums">{formatMoney(p.igi_total)}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatMoney(p.iva_total)}</TableCell>
                       <TableCell>
-                        <Badge variant={p.estatus === "aplicado" ? "success" : "secondary"}>
-                          {p.estatus === "aplicado" ? "Aplicado" : "Borrador"}
-                        </Badge>
+                        <Badge variant={p.estatus === "aplicado" ? "success" : "secondary"}>{p.estatus === "aplicado" ? "Aplicado" : "Borrador"}</Badge>
                       </TableCell>
                     </TableRow>
                   ))
@@ -232,8 +213,8 @@ export default function PedimentosPage() {
           <DialogHeader>
             <DialogTitle>Importar pedimento desde M3</DialogTitle>
             <DialogDescription>
-              El archivo M3 (extensión .003, .004…) es el que entrega el agente aduanal con la validación del
-              pedimento. Trae encabezado, contribuciones y todas las partidas: no hace falta capturar nada más.
+              El archivo M3 (extensión .003, .004…) es el que entrega el agente aduanal con la validación del pedimento. Trae encabezado, contribuciones y todas
+              las partidas: no hace falta capturar nada más.
             </DialogDescription>
           </DialogHeader>
 
@@ -244,10 +225,9 @@ export default function PedimentosPage() {
                   Pedimento <span className="font-mono">{resultado.pedimento.numero_completo}</span> importado
                 </p>
                 <p className="text-muted-foreground">
-                  {resultado.pedimento.num_partidas} partidas · T.C. {formatNumber(resultado.pedimento.tipo_cambio)}{" "}
-                  · Valor aduana {formatMoney(resultado.pedimento.valor_aduana_total)} · DTA{" "}
-                  {formatMoney(resultado.pedimento.dta)} · IGI {formatMoney(resultado.pedimento.igi_total)} · IVA{" "}
-                  {formatMoney(resultado.pedimento.iva_total)}
+                  {resultado.pedimento.num_partidas} partidas · T.C. {formatNumber(resultado.pedimento.tipo_cambio)} · Valor aduana{" "}
+                  {formatMoney(resultado.pedimento.valor_aduana_total)} · DTA {formatMoney(resultado.pedimento.dta)} · IGI{" "}
+                  {formatMoney(resultado.pedimento.igi_total)} · IVA {formatMoney(resultado.pedimento.iva_total)}
                 </p>
               </div>
               {resultado.advertencias.length > 0 && (
@@ -278,12 +258,7 @@ export default function PedimentosPage() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="referencia">Referencia interna (opcional)</Label>
-                <Input
-                  id="referencia"
-                  placeholder="p. ej. LMA26-019"
-                  value={referencia}
-                  onChange={(e) => setReferencia(e.target.value)}
-                />
+                <Input id="referencia" placeholder="p. ej. LMA26-019" value={referencia} onChange={(e) => setReferencia(e.target.value)} />
               </div>
               {errorImport && <p className="text-sm text-destructive">{errorImport}</p>}
               <DialogFooter>

@@ -119,9 +119,7 @@ export default function IsrPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">ISR · pagos provisionales</h1>
-          <p className="text-sm text-muted-foreground">
-            Estimación del pago provisional mensual según el tipo de contribuyente, con los CFDI de la bóveda.
-          </p>
+          <p className="text-sm text-muted-foreground">Estimación del pago provisional mensual según el tipo de contribuyente, con los CFDI de la bóveda.</p>
         </div>
         <div className="flex gap-2">
           {puedeConfigurar && (
@@ -147,7 +145,9 @@ export default function IsrPage() {
             setHastaMes(m ?? 12);
           }}
         />
-        <span className="text-sm text-muted-foreground">Acumulado de enero a {MESES_LARGO[hastaMes - 1]} {anio}</span>
+        <span className="text-sm text-muted-foreground">
+          Acumulado de enero a {MESES_LARGO[hastaMes - 1]} {anio}
+        </span>
       </div>
 
       {data && (
@@ -162,15 +162,25 @@ export default function IsrPage() {
           </Card>
 
           {data.advertencias.map((a) => (
-            <p key={a} className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">{a}</p>
+            <p key={a} className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+              {a}
+            </p>
           ))}
 
           {ultimo && (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <StatTile label={`Pago provisional ${MESES_LARGO[ultimo.mes - 1]}`} value={formatMoney2(ultimo.isr_del_mes)} tone="critical" hint="ISR acumulado − pagos anteriores" />
+              <StatTile
+                label={`Pago provisional ${MESES_LARGO[ultimo.mes - 1]}`}
+                value={formatMoney2(ultimo.isr_del_mes)}
+                tone="critical"
+                hint="ISR acumulado − pagos anteriores"
+              />
               <StatTile label="ISR acumulado del ejercicio" value={formatMoney2(ultimo.isr_acumulado)} />
               <StatTile label={esPM ? "Ingresos nominales acumulados" : "Ingresos cobrados acumulados"} value={formatMoney2(ultimo.ingresos_acumulados)} />
-              <StatTile label={usaDeducciones ? "Deducciones acumuladas" : "Base gravable"} value={formatMoney2(usaDeducciones ? ultimo.deducciones_acumuladas : ultimo.base)} />
+              <StatTile
+                label={usaDeducciones ? "Deducciones acumuladas" : "Base gravable"}
+                value={formatMoney2(usaDeducciones ? ultimo.deducciones_acumuladas : ultimo.base)}
+              />
             </div>
           )}
 
@@ -205,7 +215,9 @@ export default function IsrPage() {
                         <TableCell className="text-right tabular-nums">{formatMoney2(m.ingresos_acumulados)}</TableCell>
                         {usaDeducciones && <TableCell className="text-right tabular-nums">{formatMoney2(m.deducciones_acumuladas)}</TableCell>}
                         <TableCell className="text-right tabular-nums">{formatMoney2(m.base)}</TableCell>
-                        <TableCell className="text-right tabular-nums">{m.tasa_aplicada != null ? `${(m.tasa_aplicada * 100).toFixed(2)} %` : "tarifa"}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {m.tasa_aplicada != null ? `${(m.tasa_aplicada * 100).toFixed(2)} %` : "tarifa"}
+                        </TableCell>
                         <TableCell className="text-right tabular-nums">{formatMoney2(m.isr_acumulado)}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatMoney2(m.pagos_anteriores)}</TableCell>
                         <TableCell className="text-right font-semibold tabular-nums">{formatMoney2(m.isr_del_mes)}</TableCell>
@@ -218,8 +230,8 @@ export default function IsrPage() {
           </Card>
 
           <p className="text-xs text-muted-foreground">
-            Estimación: no considera retenciones de ISR, PTU pagada, pérdidas fiscales de ejercicios anteriores,
-            deducciones personales ni actualizaciones. Tarifa del art. 96 y tasas RESICO vigentes 2024-2025.
+            Estimación: no considera retenciones de ISR, PTU pagada, pérdidas fiscales de ejercicios anteriores, deducciones personales ni actualizaciones.
+            Tarifa del art. 96 y tasas RESICO vigentes 2024-2025.
           </p>
         </>
       )}
@@ -229,17 +241,22 @@ export default function IsrPage() {
           <DialogHeader>
             <DialogTitle>Configuración fiscal · {cfg?.razon_social}</DialogTitle>
             <DialogDescription>
-              El tipo de persona se toma del RFC ({cfg?.rfc}: {cfg?.tipo_persona === "fisica" ? "física, 13 caracteres" : "moral, 12 caracteres"}). El régimen y el coeficiente definen la mecánica de ISR.
+              El tipo de persona se toma del RFC ({cfg?.rfc}: {cfg?.tipo_persona === "fisica" ? "física, 13 caracteres" : "moral, 12 caracteres"}). El régimen y
+              el coeficiente definen la mecánica de ISR.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
               <Label>Régimen fiscal</Label>
               <Select value={regimen} onValueChange={setRegimen}>
-                <SelectTrigger><SelectValue placeholder="Selecciona el régimen" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona el régimen" />
+                </SelectTrigger>
                 <SelectContent>
                   {regimenes.map((r) => (
-                    <SelectItem key={r.codigo} value={r.codigo}>{r.codigo} · {r.nombre}</SelectItem>
+                    <SelectItem key={r.codigo} value={r.codigo}>
+                      {r.codigo} · {r.nombre}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -247,15 +264,30 @@ export default function IsrPage() {
             {regimenes.find((r) => r.codigo === regimen)?.mecanica_isr === "pm_general" && (
               <div className="space-y-1.5">
                 <Label htmlFor="coef">Coeficiente de utilidad (art. 14 LISR)</Label>
-                <Input id="coef" type="number" step="0.0001" min="0" max="1" placeholder="p. ej. 0.1234" value={coef} onChange={(e) => setCoef(e.target.value)} />
-                <p className="text-xs text-muted-foreground">Utilidad fiscal ÷ ingresos nominales del último ejercicio de 12 meses con utilidad. Se aplica a los ingresos nominales acumulados.</p>
+                <Input
+                  id="coef"
+                  type="number"
+                  step="0.0001"
+                  min="0"
+                  max="1"
+                  placeholder="p. ej. 0.1234"
+                  value={coef}
+                  onChange={(e) => setCoef(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Utilidad fiscal ÷ ingresos nominales del último ejercicio de 12 meses con utilidad. Se aplica a los ingresos nominales acumulados.
+                </p>
               </div>
             )}
             {errorCfg && <p className="text-sm text-destructive">{errorCfg}</p>}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpenCfg(false)}>Cancelar</Button>
-            <Button onClick={guardarConfig} disabled={guardando}>{guardando ? "Guardando…" : "Guardar"}</Button>
+            <Button variant="outline" onClick={() => setOpenCfg(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={guardarConfig} disabled={guardando}>
+              {guardando ? "Guardando…" : "Guardar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

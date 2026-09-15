@@ -8,14 +8,7 @@ import { useEmpresa } from "@/components/empresa-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -167,9 +160,7 @@ export default function InventarioPage() {
     setErrorProd(null);
     setSubmittingProd(true);
     try {
-      const atributosObj = Object.fromEntries(
-        atributos.filter((a) => a.clave.trim()).map((a) => [a.clave.trim(), a.valor]),
-      );
+      const atributosObj = Object.fromEntries(atributos.filter((a) => a.clave.trim()).map((a) => [a.clave.trim(), a.valor]));
       await apiFetch("/inventory/productos", {
         method: "POST",
         body: JSON.stringify({
@@ -199,9 +190,7 @@ export default function InventarioPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Inventario</h1>
-          <p className="text-sm text-muted-foreground">
-            Catálogo adaptable: cualquier producto o servicio, con categorías y atributos propios.
-          </p>
+          <p className="text-sm text-muted-foreground">Catálogo adaptable: cualquier producto o servicio, con categorías y atributos propios.</p>
         </div>
         {puedeAjustar && (
           <div className="flex flex-wrap gap-2">
@@ -290,12 +279,7 @@ export default function InventarioPage() {
                     </div>
                     <div className="space-y-2">
                       <Label>Costo unitario</Label>
-                      <Input
-                        type="number"
-                        step="0.01"
-                        value={nuevoCosto}
-                        onChange={(e) => setNuevoCosto(e.target.value)}
-                      />
+                      <Input type="number" step="0.01" value={nuevoCosto} onChange={(e) => setNuevoCosto(e.target.value)} />
                     </div>
                   </div>
 
@@ -308,23 +292,9 @@ export default function InventarioPage() {
                     </div>
                     {atributos.map((a, idx) => (
                       <div key={idx} className="flex gap-2">
-                        <Input
-                          placeholder="clave (ej. color)"
-                          value={a.clave}
-                          onChange={(e) => actualizarAtributo(idx, "clave", e.target.value)}
-                        />
-                        <Input
-                          placeholder="valor (ej. negro)"
-                          value={a.valor}
-                          onChange={(e) => actualizarAtributo(idx, "valor", e.target.value)}
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => quitarAtributo(idx)}
-                          aria-label="Quitar este atributo"
-                        >
+                        <Input placeholder="clave (ej. color)" value={a.clave} onChange={(e) => actualizarAtributo(idx, "clave", e.target.value)} />
+                        <Input placeholder="valor (ej. negro)" value={a.valor} onChange={(e) => actualizarAtributo(idx, "valor", e.target.value)} />
+                        <Button type="button" variant="ghost" size="icon" onClick={() => quitarAtributo(idx)} aria-label="Quitar este atributo">
                           <X className="h-4 w-4" />
                         </Button>
                       </div>
@@ -406,12 +376,7 @@ export default function InventarioPage() {
                     </div>
                     <div className="space-y-2">
                       <Label>Cantidad</Label>
-                      <Input
-                        type="number"
-                        value={cantidad}
-                        onChange={(e) => setCantidad(e.target.value)}
-                        required
-                      />
+                      <Input type="number" value={cantidad} onChange={(e) => setCantidad(e.target.value)} required />
                     </div>
                   </div>
                   <div className="space-y-2">

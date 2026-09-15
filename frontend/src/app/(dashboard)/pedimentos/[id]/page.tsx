@@ -10,14 +10,7 @@ import { StatTile } from "@/components/stat-tile";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -27,15 +20,7 @@ import { ApiError, apiFetch } from "@/lib/api";
 import { exportarExcel } from "@/lib/export-xlsx";
 import { formatDate, formatMoney2, formatNumber, formatUnit } from "@/lib/format";
 import { PERM, can } from "@/lib/permissions";
-import type {
-  Almacen,
-  AplicarInventarioResponse,
-  GastoAdicional,
-  MetodoProrrateo,
-  PedimentoDetalle,
-  PedimentoPartida,
-  Producto,
-} from "@/lib/types";
+import type { Almacen, AplicarInventarioResponse, GastoAdicional, MetodoProrrateo, PedimentoDetalle, PedimentoPartida, Producto } from "@/lib/types";
 
 const METODOS: { value: MetodoProrrateo; label: string; hint: string }[] = [
   { value: "partes_iguales", label: "Partes iguales", hint: "Monto ÷ número de partidas (como el papel de trabajo)" },
@@ -141,9 +126,7 @@ export default function PedimentoDetallePage() {
           dta: Number(dta) || 0,
           utilidad: Number(utilidad) || 0,
           metodo_prorrateo: metodo,
-          gastos_adicionales: gastos
-            .filter((g) => g.concepto.trim())
-            .map((g) => ({ concepto: g.concepto.trim(), monto: Number(g.monto) || 0 })),
+          gastos_adicionales: gastos.filter((g) => g.concepto.trim()).map((g) => ({ concepto: g.concepto.trim(), monto: Number(g.monto) || 0 })),
         }),
       });
       setPed(actualizado);
@@ -301,9 +284,7 @@ export default function PedimentoDetallePage() {
           </Button>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="font-mono text-2xl font-semibold">{ped.numero_completo}</h1>
-            <Badge variant={ped.estatus === "aplicado" ? "success" : "secondary"}>
-              {ped.estatus === "aplicado" ? "Aplicado a inventario" : "Borrador"}
-            </Badge>
+            <Badge variant={ped.estatus === "aplicado" ? "success" : "secondary"}>{ped.estatus === "aplicado" ? "Aplicado a inventario" : "Borrador"}</Badge>
             <Badge variant="outline">{ped.origen === "m3" ? "Importado de M3" : "Captura manual"}</Badge>
             {ped.clave_pedimento && <Badge variant="outline">Clave {ped.clave_pedimento}</Badge>}
           </div>
@@ -345,7 +326,17 @@ export default function PedimentoDetallePage() {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
         <StatTile label="Tipo de cambio" value={formatNumber(ped.tipo_cambio)} hint={`USD ${formatNumber(ped.valor_usd_total)}`} />
         <StatTile label="Valor en aduana" value={formatMoney2(ped.valor_aduana_total)} hint={`${ped.num_partidas} partidas`} />
-        <StatTile label="DTA" value={formatMoney2(r.dta)} hint={ped.otras_contribuciones ? Object.entries(ped.otras_contribuciones).map(([k, v]) => `${k} ${v}`).join(" · ") : undefined} />
+        <StatTile
+          label="DTA"
+          value={formatMoney2(r.dta)}
+          hint={
+            ped.otras_contribuciones
+              ? Object.entries(ped.otras_contribuciones)
+                  .map(([k, v]) => `${k} ${v}`)
+                  .join(" · ")
+              : undefined
+          }
+        />
         <StatTile label="IGI total" value={formatMoney2(r.igi_total)} />
         <StatTile label="IVA de importación" value={formatMoney2(r.iva_importacion_total)} />
         <StatTile label="Costo total (landed)" value={formatMoney2(r.costo_total)} tone="good" hint={`Refactura ${formatMoney2(r.total_venta)}`} />
@@ -419,7 +410,13 @@ export default function PedimentoDetallePage() {
                         onChange={(e) => setGastos((prev) => prev.map((x, j) => (j === i ? { ...x, monto: Number(e.target.value) } : x)))}
                       />
                       {editable && (
-                        <Button type="button" variant="ghost" size="icon" aria-label="Quitar gasto" onClick={() => setGastos((prev) => prev.filter((_, j) => j !== i))}>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Quitar gasto"
+                          onClick={() => setGastos((prev) => prev.filter((_, j) => j !== i))}
+                        >
                           <X className="h-4 w-4" />
                         </Button>
                       )}
@@ -456,11 +453,7 @@ export default function PedimentoDetallePage() {
               <Fila k="Subtotal a facturar" v={formatMoney2(r.subtotal_venta)} strong />
               <Fila k="IVA 16%" v={formatMoney2(r.iva_venta)} />
               <Fila k="Total a facturar" v={formatMoney2(r.total_venta)} strong />
-              <Fila
-                k="Dif. IVA facturado − IVA importación"
-                v={formatMoney2(r.dif_iva_total)}
-                tone={r.dif_iva_total < 0 ? "critical" : "good"}
-              />
+              <Fila k="Dif. IVA facturado − IVA importación" v={formatMoney2(r.dif_iva_total)} tone={r.dif_iva_total < 0 ? "critical" : "good"} />
             </dl>
             {sinProducto > 0 && (
               <p className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs">
@@ -484,7 +477,9 @@ export default function PedimentoDetallePage() {
               {editable && (
                 <div className="flex items-center gap-2 pb-2">
                   {ped.partidas.some((p) => !p.clave_prodserv) && (
-                    <Button size="sm" variant="outline" onClick={aplicarClaves}>Aplicar claves del catálogo</Button>
+                    <Button size="sm" variant="outline" onClick={aplicarClaves}>
+                      Aplicar claves del catálogo
+                    </Button>
                   )}
                   <p className="text-xs text-muted-foreground">Clic en una partida para asignar clave SAT o producto.</p>
                 </div>
@@ -520,12 +515,20 @@ export default function PedimentoDetallePage() {
                       <TableRow key={p.id} className={editable ? "cursor-pointer" : undefined} onClick={editable ? () => abrirEdicionPartida(p) : undefined}>
                         <TableCell className="tabular-nums">{p.secuencia}</TableCell>
                         <TableCell className="max-w-[240px]">
-                          <span className="block truncate" title={p.descripcion}>{p.descripcion}</span>
+                          <span className="block truncate" title={p.descripcion}>
+                            {p.descripcion}
+                          </span>
                           {p.clave_prodserv && <span className="text-xs text-muted-foreground">SAT {p.clave_prodserv}</span>}
                         </TableCell>
-                        <TableCell className="font-mono text-xs">{p.fraccion}{p.nico ? ` ${p.nico}` : ""}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {p.fraccion}
+                          {p.nico ? ` ${p.nico}` : ""}
+                        </TableCell>
                         <TableCell className="text-right tabular-nums">{formatNumber(p.cantidad_umc)}</TableCell>
-                        <TableCell className="text-xs">{p.umc_descripcion ?? p.umc_clave}{p.clave_unidad_sat ? ` (${p.clave_unidad_sat})` : ""}</TableCell>
+                        <TableCell className="text-xs">
+                          {p.umc_descripcion ?? p.umc_clave}
+                          {p.clave_unidad_sat ? ` (${p.clave_unidad_sat})` : ""}
+                        </TableCell>
                         <TableCell className="text-right tabular-nums">{formatUnit(p.precio_unitario)}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatMoney2(p.valor_comercial)}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatNumber(p.valor_usd)}</TableCell>
@@ -539,7 +542,9 @@ export default function PedimentoDetallePage() {
                         <TableCell className="text-right font-medium tabular-nums">{formatUnit(p.costeo.precio_unitario_venta)}</TableCell>
                         <TableCell>
                           {p.producto_sku ? (
-                            <Badge variant="outline" className="font-mono text-xs">{p.producto_sku}</Badge>
+                            <Badge variant="outline" className="font-mono text-xs">
+                              {p.producto_sku}
+                            </Badge>
                           ) : (
                             <span className="text-xs text-muted-foreground">nuevo al aplicar</span>
                           )}
@@ -573,16 +578,22 @@ export default function PedimentoDetallePage() {
                         <TableCell className="text-right tabular-nums">{formatNumber(p.cantidad_umc)}</TableCell>
                         <TableCell className="font-mono text-xs">{p.clave_unidad_sat ?? "—"}</TableCell>
                         <TableCell className="font-mono text-xs">{p.clave_prodserv ?? <span className="text-amber-600">falta</span>}</TableCell>
-                        <TableCell className="max-w-[280px] truncate" title={p.descripcion}>{p.descripcion}</TableCell>
+                        <TableCell className="max-w-[280px] truncate" title={p.descripcion}>
+                          {p.descripcion}
+                        </TableCell>
                         <TableCell className="text-right tabular-nums">{formatUnit(p.costeo.precio_unitario_venta)}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatMoney2(p.costeo.subtotal)}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatMoney2(p.costeo.iva_16)}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatMoney2(p.costeo.total)}</TableCell>
-                        <TableCell className={`text-right tabular-nums ${p.costeo.dif_iva < 0 ? "text-[color:var(--status-critical)]" : ""}`}>{formatMoney2(p.costeo.dif_iva)}</TableCell>
+                        <TableCell className={`text-right tabular-nums ${p.costeo.dif_iva < 0 ? "text-[color:var(--status-critical)]" : ""}`}>
+                          {formatMoney2(p.costeo.dif_iva)}
+                        </TableCell>
                       </TableRow>
                     ))}
                     <TableRow className="font-semibold">
-                      <TableCell colSpan={5} className="text-right">Totales</TableCell>
+                      <TableCell colSpan={5} className="text-right">
+                        Totales
+                      </TableCell>
                       <TableCell className="text-right tabular-nums">{formatMoney2(r.subtotal_venta)}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatMoney2(r.iva_venta)}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatMoney2(r.total_venta)}</TableCell>
@@ -599,7 +610,10 @@ export default function PedimentoDetallePage() {
                 <Fila k="Patente" v={ped.patente} mono />
                 <Fila k="Aduana / sección" v={ped.aduana} mono />
                 <Fila k="Clave" v={ped.clave_pedimento ?? "—"} />
-                <Fila k="Tipo de operación" v={ped.tipo_operacion === "1" ? "Importación" : ped.tipo_operacion === "2" ? "Exportación" : (ped.tipo_operacion ?? "—")} />
+                <Fila
+                  k="Tipo de operación"
+                  v={ped.tipo_operacion === "1" ? "Importación" : ped.tipo_operacion === "2" ? "Exportación" : (ped.tipo_operacion ?? "—")}
+                />
                 <Fila k="RFC importador" v={ped.rfc_importador ?? "—"} mono />
                 <Fila k="Fecha de entrada" v={ped.fecha_entrada ? formatDate(ped.fecha_entrada) : "—"} />
                 <Fila k="Fecha de pago" v={ped.fecha_pago ? formatDate(ped.fecha_pago) : "—"} />
@@ -609,7 +623,16 @@ export default function PedimentoDetallePage() {
                 <Fila k="Incoterm" v={ped.incoterm ?? "—"} />
                 <Fila k="Contenedores" v={ped.contenedores?.join(", ") || "—"} mono />
                 <Fila k="Guías" v={ped.guias?.join(", ") || "—"} mono />
-                <Fila k="Otras contribuciones" v={ped.otras_contribuciones ? Object.entries(ped.otras_contribuciones).map(([k, v]) => `${k}: ${v}`).join(" · ") : "—"} />
+                <Fila
+                  k="Otras contribuciones"
+                  v={
+                    ped.otras_contribuciones
+                      ? Object.entries(ped.otras_contribuciones)
+                          .map(([k, v]) => `${k}: ${v}`)
+                          .join(" · ")
+                      : "—"
+                  }
+                />
                 <Fila k="Archivo" v={ped.archivo_nombre ?? "—"} mono />
                 <Fila k="Notas" v={ped.notas ?? "—"} />
               </dl>
@@ -622,7 +645,9 @@ export default function PedimentoDetallePage() {
       <Dialog open={!!partidaEdit} onOpenChange={(o) => !o && setPartidaEdit(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Partida {partidaEdit?.secuencia} · {partidaEdit?.descripcion}</DialogTitle>
+            <DialogTitle>
+              Partida {partidaEdit?.secuencia} · {partidaEdit?.descripcion}
+            </DialogTitle>
             <DialogDescription>Clave SAT para facturar y producto del catálogo al que entra esta partida.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -638,19 +663,25 @@ export default function PedimentoDetallePage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={SIN_PRODUCTO}>Crear producto nuevo al aplicar</SelectItem>
-                  {productos.filter((p) => p.tipo === "producto").map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.sku} · {p.nombre}
-                    </SelectItem>
-                  ))}
+                  {productos
+                    .filter((p) => p.tipo === "producto")
+                    .map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.sku} · {p.nombre}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
             {errorPartida && <p className="text-sm text-destructive">{errorPartida}</p>}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPartidaEdit(null)}>Cancelar</Button>
-            <Button onClick={guardarPartida} disabled={guardandoPartida}>{guardandoPartida ? "Guardando…" : "Guardar"}</Button>
+            <Button variant="outline" onClick={() => setPartidaEdit(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={guardarPartida} disabled={guardandoPartida}>
+              {guardandoPartida ? "Guardando…" : "Guardar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -661,20 +692,23 @@ export default function PedimentoDetallePage() {
           <DialogHeader>
             <DialogTitle>Aplicar al inventario</DialogTitle>
             <DialogDescription>
-              Se registra una entrada por partida con su costo unitario landed ({formatMoney2(r.costo_total)} en total).
-              El pedimento queda congelado y ya no se puede modificar.
+              Se registra una entrada por partida con su costo unitario landed ({formatMoney2(r.costo_total)} en total). El pedimento queda congelado y ya no se
+              puede modificar.
             </DialogDescription>
           </DialogHeader>
           {resultadoAplicar ? (
             <div className="space-y-3 text-sm">
               <p>
-                Listo: <strong>{resultadoAplicar.movimientos_creados}</strong> entradas al inventario,{" "}
-                <strong>{resultadoAplicar.productos_creados}</strong> productos nuevos, costo total{" "}
-                <strong>{formatMoney2(resultadoAplicar.costo_total)}</strong>.
+                Listo: <strong>{resultadoAplicar.movimientos_creados}</strong> entradas al inventario, <strong>{resultadoAplicar.productos_creados}</strong>{" "}
+                productos nuevos, costo total <strong>{formatMoney2(resultadoAplicar.costo_total)}</strong>.
               </p>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setOpenAplicar(false)}>Cerrar</Button>
-                <Button asChild><Link href="/inventario">Ver inventario</Link></Button>
+                <Button variant="outline" onClick={() => setOpenAplicar(false)}>
+                  Cerrar
+                </Button>
+                <Button asChild>
+                  <Link href="/inventario">Ver inventario</Link>
+                </Button>
               </DialogFooter>
             </div>
           ) : (
@@ -685,10 +719,14 @@ export default function PedimentoDetallePage() {
                 <div className="space-y-1.5">
                   <Label>Almacén destino</Label>
                   <Select value={codigoAlmacen} onValueChange={setCodigoAlmacen}>
-                    <SelectTrigger><SelectValue placeholder="Selecciona un almacén" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona un almacén" />
+                    </SelectTrigger>
                     <SelectContent>
                       {almacenes.map((a) => (
-                        <SelectItem key={a.id} value={a.codigo}>{a.codigo} · {a.nombre}</SelectItem>
+                        <SelectItem key={a.id} value={a.codigo}>
+                          {a.codigo} · {a.nombre}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -696,14 +734,18 @@ export default function PedimentoDetallePage() {
               )}
               {sinProducto > 0 && (
                 <p className="text-sm text-muted-foreground">
-                  {sinProducto} partida{sinProducto > 1 ? "s" : ""} sin producto: se crear{sinProducto > 1 ? "án" : "á"} en la
-                  categoría &quot;Importación&quot; con SKU derivado de la descripción.
+                  {sinProducto} partida{sinProducto > 1 ? "s" : ""} sin producto: se crear{sinProducto > 1 ? "án" : "á"} en la categoría &quot;Importación&quot;
+                  con SKU derivado de la descripción.
                 </p>
               )}
               {errorAplicar && <p className="text-sm text-destructive">{errorAplicar}</p>}
               <DialogFooter>
-                <Button variant="outline" onClick={() => setOpenAplicar(false)}>Cancelar</Button>
-                <Button onClick={aplicar} disabled={aplicando || !codigoAlmacen}>{aplicando ? "Aplicando…" : "Aplicar"}</Button>
+                <Button variant="outline" onClick={() => setOpenAplicar(false)}>
+                  Cancelar
+                </Button>
+                <Button onClick={aplicar} disabled={aplicando || !codigoAlmacen}>
+                  {aplicando ? "Aplicando…" : "Aplicar"}
+                </Button>
               </DialogFooter>
             </div>
           )}
@@ -715,11 +757,17 @@ export default function PedimentoDetallePage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Eliminar pedimento</DialogTitle>
-            <DialogDescription>Se elimina el borrador {ped.numero_completo} con sus {ped.num_partidas} partidas. Esta acción no se puede deshacer.</DialogDescription>
+            <DialogDescription>
+              Se elimina el borrador {ped.numero_completo} con sus {ped.num_partidas} partidas. Esta acción no se puede deshacer.
+            </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpenEliminar(false)}>Cancelar</Button>
-            <Button variant="destructive" onClick={eliminar}>Eliminar</Button>
+            <Button variant="outline" onClick={() => setOpenEliminar(false)}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={eliminar}>
+              Eliminar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

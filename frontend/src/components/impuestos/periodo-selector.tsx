@@ -3,10 +3,7 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-export const MESES_LARGO = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
-];
+export const MESES_LARGO = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
 interface Props {
   anio: number;
@@ -31,19 +28,27 @@ export function PeriodoSelector({ anio, mes, anios, onChange, permitirAnual = tr
         </Tabs>
       )}
       <Select value={String(anio)} onValueChange={(v) => onChange(Number(v), mes)}>
-        <SelectTrigger className="w-[110px]"><SelectValue /></SelectTrigger>
+        <SelectTrigger className="w-[110px]">
+          <SelectValue />
+        </SelectTrigger>
         <SelectContent>
           {listaAnios.map((a) => (
-            <SelectItem key={a} value={String(a)}>{a}</SelectItem>
+            <SelectItem key={a} value={String(a)}>
+              {a}
+            </SelectItem>
           ))}
         </SelectContent>
       </Select>
       {mes !== null && (
         <Select value={String(mes)} onValueChange={(v) => onChange(anio, Number(v))}>
-          <SelectTrigger className="w-[150px]"><SelectValue placeholder={etiquetaMes} /></SelectTrigger>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder={etiquetaMes} />
+          </SelectTrigger>
           <SelectContent>
             {MESES_LARGO.map((m, i) => (
-              <SelectItem key={m} value={String(i + 1)}>{m}</SelectItem>
+              <SelectItem key={m} value={String(i + 1)}>
+                {m}
+              </SelectItem>
             ))}
           </SelectContent>
         </Select>

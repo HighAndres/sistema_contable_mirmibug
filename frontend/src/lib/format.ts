@@ -8,9 +8,7 @@ export function formatDate(iso: string): string {
   // Una fecha sin hora ("2026-01-03") se interpretaría como UTC medianoche y en
   // México se mostraría el día anterior; se construye como fecha local.
   const soloFecha = /^\d{4}-\d{2}-\d{2}$/.test(iso);
-  const fecha = soloFecha
-    ? new Date(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10)))
-    : new Date(iso);
+  const fecha = soloFecha ? new Date(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10))) : new Date(iso);
   return new Intl.DateTimeFormat("es-MX", { day: "2-digit", month: "short", year: "numeric" }).format(fecha);
 }
 

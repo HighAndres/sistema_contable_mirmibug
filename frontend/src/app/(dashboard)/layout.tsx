@@ -27,13 +27,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PERM, type Permiso, canAny } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import type { MiEmpresa, Usuario } from "@/lib/types";
@@ -130,11 +124,7 @@ function SidebarContent({ grupos, pathname, user, empresaActiva, onNavigate, onL
       </nav>
       <Separator />
       <div className="space-y-3 p-3">
-        <Link
-          href="/perfil"
-          onClick={onNavigate}
-          className="flex items-center gap-2 rounded-md p-1 hover:bg-accent"
-        >
+        <Link href="/perfil" onClick={onNavigate} className="flex items-center gap-2 rounded-md p-1 hover:bg-accent">
           <Avatar>
             <AvatarFallback>{(user.nombre_completo ?? user.email).slice(0, 1).toUpperCase()}</AvatarFallback>
           </Avatar>
@@ -174,9 +164,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (authLoading || !user) return null;
 
   const permisos = empresaActiva?.permisos ?? [];
-  const visibleGrupos = NAV_GRUPOS.map((g) => ({ ...g, items: g.items.filter((item) => canAny(permisos, item.permisos)) })).filter(
-    (g) => g.items.length > 0,
-  );
+  const visibleGrupos = NAV_GRUPOS.map((g) => ({ ...g, items: g.items.filter((item) => canAny(permisos, item.permisos)) })).filter((g) => g.items.length > 0);
 
   function handleLogout() {
     logout();
@@ -186,13 +174,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex min-h-dvh">
       <aside className="hidden w-60 shrink-0 border-r bg-card lg:block">
-        <SidebarContent
-          grupos={visibleGrupos}
-          pathname={pathname}
-          user={user}
-          empresaActiva={empresaActiva}
-          onLogout={handleLogout}
-        />
+        <SidebarContent grupos={visibleGrupos} pathname={pathname} user={user} empresaActiva={empresaActiva} onLogout={handleLogout} />
       </aside>
 
       <Dialog open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
@@ -239,9 +221,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <main className="min-w-0 flex-1 overflow-y-auto bg-background p-4 sm:p-6 lg:p-8">
           {!empresasLoading && empresas.length === 0 && pathname !== "/empresas" ? (
             <div className="mx-auto max-w-md rounded-lg border bg-card p-6 text-center">
-              <p className="mb-4 text-sm text-muted-foreground">
-                Aún no perteneces a ninguna empresa. Crea la primera para empezar.
-              </p>
+              <p className="mb-4 text-sm text-muted-foreground">Aún no perteneces a ninguna empresa. Crea la primera para empezar.</p>
               <Link href="/empresas" className="text-sm font-medium text-primary underline">
                 Ir a Empresas
               </Link>

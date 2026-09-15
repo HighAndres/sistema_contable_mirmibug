@@ -89,24 +89,10 @@ export default function ReportesPage() {
               <LineChart data={chartData}>
                 <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
                 <XAxis dataKey="label" stroke="var(--chart-axis)" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis
-                  stroke="var(--chart-axis)"
-                  fontSize={12}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v) => formatMoney(Number(v))}
-                  width={90}
-                />
+                <YAxis stroke="var(--chart-axis)" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(v) => formatMoney(Number(v))} width={90} />
                 <Tooltip formatter={(value: number) => formatMoney(value)} />
                 <Legend />
-                <Line
-                  type="monotone"
-                  dataKey="utilidad"
-                  name="Utilidad"
-                  stroke="var(--chart-series-1)"
-                  strokeWidth={2}
-                  dot={{ r: 3 }}
-                />
+                <Line type="monotone" dataKey="utilidad" name="Utilidad" stroke="var(--chart-series-1)" strokeWidth={2} dot={{ r: 3 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>
