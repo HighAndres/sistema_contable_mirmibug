@@ -25,6 +25,18 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+# SQLAlchemy resuelve las relaciones por nombre ("Rol", "Producto"…): hay que
+# registrar TODOS los modelos aunque este script solo toque CFDI.
+import app.modules.auth.models  # noqa: F401,E402
+import app.modules.bitacora.models  # noqa: F401,E402
+import app.modules.catalogs.models  # noqa: F401,E402
+import app.modules.conciliacion.models  # noqa: F401,E402
+import app.modules.credentials.models  # noqa: F401,E402
+import app.modules.inventory.models  # noqa: F401,E402
+import app.modules.pedimentos.models  # noqa: F401,E402
+import app.modules.rules.models  # noqa: F401,E402
+import app.modules.terceros.models  # noqa: F401,E402
+
 from app.db.session import SessionLocal
 from app.modules.cfdi.models import (
     Cfdi,
