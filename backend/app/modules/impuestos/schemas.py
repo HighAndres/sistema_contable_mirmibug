@@ -49,6 +49,28 @@ class IsrRead(BaseModel):
     anios_disponibles: list[int]
 
 
+class FilaIsnRead(BaseModel):
+    entidad_codigo: str | None
+    entidad_nombre: str
+    tasa: float | None  # None = entidad sin tasa en la tabla (o sin clave)
+    recibos: int
+    percepciones: float
+    deducciones: float
+    otros_pagos: float
+    base: float
+    isn: float
+
+
+class IsnRead(BaseModel):
+    anio: int
+    mes: int | None
+    filas: list[FilaIsnRead]
+    total_base: float
+    total_isn: float
+    advertencias: list[str]
+    anios_disponibles: list[int]
+
+
 class ConfiguracionFiscalRead(BaseModel):
     rfc: str
     razon_social: str

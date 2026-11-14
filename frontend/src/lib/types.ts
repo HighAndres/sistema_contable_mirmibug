@@ -90,8 +90,72 @@ export interface CfdiConcepto {
   descripcion: string;
   cantidad: number;
   unidad_codigo: string | null;
+  clave_prodserv: string | null;
   valor_unitario: number;
   importe: number;
+}
+
+/** Una tasa de IVA trasladado del comprobante: "16%", "0%", "Exento"… */
+export interface TasaIva {
+  etiqueta: string;
+  base: number;
+  importe: number;
+}
+
+/** Fila del desglose completo de impuestos del comprobante (cfdi_impuestos). */
+export interface DesgloseImpuesto {
+  naturaleza: "traslado" | "retencion" | "no_objeto";
+  impuesto: string;
+  tipo_factor: string | null;
+  tasa: number | null;
+  base: number;
+  importe: number;
+  nombre_local: string | null;
+}
+
+/** Movimiento del estado de cuenta ligado al CFDI en la conciliación. */
+export interface LigaBancaria {
+  movimiento_id: string;
+  fecha: string;
+  concepto: string;
+  referencia: string | null;
+  cuenta: string;
+  importe: number;
+}
+
+export interface NominaConcepto {
+  grupo: "percepcion" | "deduccion" | "otro_pago";
+  tipo_codigo: string | null;
+  clave: string | null;
+  concepto: string;
+  gravado: number;
+  exento: number;
+}
+
+/** Complemento de nómina del recibo; los datos personales del trabajador
+ * llegan en null si el usuario no tiene el permiso nomina.leer. */
+export interface NominaDetalle {
+  tipo_nomina: string | null;
+  fecha_pago: string | null;
+  fecha_inicial_pago: string | null;
+  fecha_final_pago: string | null;
+  num_dias_pagados: number | null;
+  total_percepciones: number;
+  total_deducciones: number;
+  total_otros_pagos: number;
+  registro_patronal: string | null;
+  periodicidad_pago: string | null;
+  clave_ent_fed: string | null;
+  num_empleado: string | null;
+  departamento: string | null;
+  puesto: string | null;
+  curp_receptor: string | null;
+  num_seguridad_social: string | null;
+  banco: string | null;
+  cuenta_bancaria: string | null;
+  salario_base_cot_apor: number | null;
+  salario_diario_integrado: number | null;
+  conceptos: NominaConcepto[];
 }
 
 export interface CfdiAlerta {
@@ -140,6 +204,25 @@ export interface Cfdi {
   concepto: string | null;
   cuenta_contable: string | null;
   referencia_bancaria: string | null;
+  /** Derivados contra la conciliación bancaria. */
+  conciliado: "conciliado" | "parcial" | null;
+  conciliado_importe: number;
+  /** Derivado: si cuenta para la declaración del periodo (null en REP y nómina). */
+  en_declaracion: boolean | null;
+  /** IVA trasladado por tasa; vacío en CFDI simulados o cargados sin desglose. */
+  desglose_iva: TasaIva[];
+  /** Solo REP (tipo pago). */
+  rep_fecha_pago: string | null;
+  rep_importe_pagado: number;
+  rep_iva_pagado: number;
+  /** Solo recibos de nómina. */
+  nomina_fecha_pago: string | null;
+  nomina_percepciones: number | null;
+  nomina_deducciones: number | null;
+  nomina_otros_pagos: number | null;
+  registro_patronal: string | null;
+  entidad_codigo: string | null;
+  periodicidad_codigo: string | null;
 }
 
 export type EstadoPago = "pagada" | "parcial" | "pendiente";
@@ -168,6 +251,8 @@ export interface PagoDocto {
   cfdi_pago_id: string;
   uuid_pago: string;
   uuid_relacionado: string;
+  /** Id de la factura PPD que liquida, si está en la bóveda (para ir directo). */
+  cfdi_relacionado_id: string | null;
   num_parcialidad: number | null;
   imp_saldo_anterior: number | null;
   imp_pagado: number;
@@ -210,6 +295,39 @@ export interface CfdiDetalle extends Cfdi {
   saldo_pendiente: number | null;
   pagos_relacionados: PagoDocto[];
   tiene_xml: boolean;
+  impuestos: DesgloseImpuesto[];
+  ligas_bancarias: LigaBancaria[];
+  nomina: NominaDetalle | null;
+}
+
+/** Valores presentes en los CFDI de la empresa para poblar filtros. */
+export interface ValoresFiltros {
+  usos_cfdi: string[];
+  registros_patronales: string[];
+  entidades: string[];
+  periodicidades: string[];
+}
+
+export interface FilaIsn {
+  entidad_codigo: string | null;
+  entidad_nombre: string;
+  tasa: number | null;
+  recibos: number;
+  percepciones: number;
+  deducciones: number;
+  otros_pagos: number;
+  base: number;
+  isn: number;
+}
+
+export interface IsnPeriodo {
+  anio: number;
+  mes: number | null;
+  filas: FilaIsn[];
+  total_base: number;
+  total_isn: number;
+  advertencias: string[];
+  anios_disponibles: number[];
 }
 
 export interface CfdiPage {

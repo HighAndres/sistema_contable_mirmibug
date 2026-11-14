@@ -5,7 +5,7 @@ from decimal import Decimal
 from sqlalchemy import Select, and_, extract, func, or_, select
 from sqlalchemy.orm import Session, aliased
 
-from app.modules.cfdi.models import Cfdi, CfdiPagoDocto
+from app.modules.cfdi.models import Cfdi, CfdiNomina, CfdiPagoDocto
 
 TIPOS = ("ingreso", "egreso", "pago", "nomina", "nota_credito")
 ESTATUS = ("vigente", "cancelado", "en_proceso")
@@ -52,8 +52,25 @@ def _aplicar_filtros(
     estado_pago: str | None = None,
     clasificacion: str | None = None,
     concepto: str | None = None,
+    uso_cfdi: str | None = None,
+    registro_patronal: str | None = None,
+    entidad: str | None = None,
+    periodicidad: str | None = None,
 ) -> Select:
     stmt = stmt.where(Cfdi.empresa_id == empresa_id)
+    # Filtros de nómina: van por EXISTS al complemento para no duplicar filas
+    # ni ensuciar el resto de la consulta con un join.
+    filtros_nomina = []
+    if registro_patronal:
+        filtros_nomina.append(CfdiNomina.registro_patronal == registro_patronal)
+    if entidad:
+        filtros_nomina.append(CfdiNomina.clave_ent_fed == entidad)
+    if periodicidad:
+        filtros_nomina.append(CfdiNomina.periodicidad_pago == periodicidad)
+    if filtros_nomina:
+        stmt = stmt.where(select(CfdiNomina.id).where(CfdiNomina.cfdi_id == Cfdi.id, *filtros_nomina).correlate(Cfdi).exists())
+    if uso_cfdi:
+        stmt = stmt.where(Cfdi.uso_cfdi_codigo == uso_cfdi)
     if tipo:
         stmt = stmt.where(Cfdi.tipo == tipo)
     if direccion:
@@ -191,6 +208,52 @@ def pagado_rep_de(db: Session, *, empresa_id: uuid.UUID, uuids: list[str]) -> di
         .group_by(CfdiPagoDocto.uuid_relacionado)
     ).all()
     return {u: Decimal(p) for u, p in filas}
+
+
+def conciliado_de(db: Session, *, cfdi_ids: list[uuid.UUID]) -> dict[uuid.UUID, Decimal]:
+    """{cfdi_id: importe ligado a movimientos bancarios} solo para los ids dados
+    (una consulta para toda la página). Sin fila = sin conciliar."""
+    if not cfdi_ids:
+        return {}
+    from app.modules.conciliacion.models import LigaConciliacion
+
+    filas = db.execute(
+        select(LigaConciliacion.cfdi_id, func.coalesce(func.sum(LigaConciliacion.importe), 0))
+        .where(LigaConciliacion.cfdi_id.in_(cfdi_ids))
+        .group_by(LigaConciliacion.cfdi_id)
+    ).all()
+    return {c: Decimal(v) for c, v in filas}
+
+
+def estado_conciliado(cfdi: Cfdi, importe_ligado: Decimal) -> str | None:
+    """conciliado | parcial | None según lo ligado en la conciliación bancaria.
+    Un REP se compara contra lo que paga (su total es 0 por definición)."""
+    if importe_ligado <= 0:
+        return None
+    objetivo = Decimal(str(sum((p.imp_pagado for p in cfdi.pagos_relacionados), Decimal("0")))) if cfdi.tipo == "pago" else Decimal(cfdi.total)
+    return "conciliado" if objetivo > 0 and importe_ligado >= objetivo else "parcial"
+
+
+def valores_filtros(db: Session, *, empresa_id: uuid.UUID) -> dict[str, list[str]]:
+    """Valores distintos presentes en la empresa para poblar los filtros de la
+    lista: usos de CFDI y registro patronal / entidad / periodicidad de nómina."""
+
+    def _distintos(col, *joins) -> list[str]:
+        stmt = select(col).where(Cfdi.empresa_id == empresa_id, col.is_not(None)).distinct().order_by(col)
+        for cond in joins:
+            stmt = stmt.join(Cfdi, cond)
+        return list(db.scalars(stmt))
+
+    usos = _distintos(Cfdi.uso_cfdi_codigo)
+    registros = _distintos(CfdiNomina.registro_patronal, CfdiNomina.cfdi_id == Cfdi.id)
+    entidades = _distintos(CfdiNomina.clave_ent_fed, CfdiNomina.cfdi_id == Cfdi.id)
+    periodicidades = _distintos(CfdiNomina.periodicidad_pago, CfdiNomina.cfdi_id == Cfdi.id)
+    return {
+        "usos_cfdi": usos,
+        "registros_patronales": registros,
+        "entidades": entidades,
+        "periodicidades": periodicidades,
+    }
 
 
 def estado_pago_de(cfdi: Cfdi, pagado_rep: Decimal) -> str | None:

@@ -19,10 +19,16 @@ from app.modules.cfdi.schemas import (
     ClasificacionMasivaRequest,
     ClasificacionMasivaResultado,
     ClasificacionRequest,
+    DesgloseImpuestoRead,
+    LigaBancariaRead,
+    NominaConceptoRead,
+    NominaDetalleRead,
     PagoDoctoRead,
     PagoManualRequest,
     ReporteCfdi,
+    TasaIvaRead,
     ValoresClasificacion,
+    ValoresFiltros,
 )
 from app.modules.rules import crud as rules_crud
 
@@ -46,6 +52,10 @@ def _filtros(
     estado_pago: str | None = Query(default=None, pattern="^(pagada|pendiente)$", description="Solo facturas: pagada (PUE, PPD con REP completo o marcada a mano) o pendiente (PPD sin pagar)"),
     clasificacion: str | None = Query(default=None, pattern="^(deducible|no_deducible|deduccion_personal|sin_clasificar)$"),
     concepto: str | None = Query(default=None, max_length=60, description="Concepto del papel de trabajo (contiene)"),
+    uso_cfdi: str | None = Query(default=None, max_length=5),
+    registro_patronal: str | None = Query(default=None, max_length=20, description="Solo recibos de nómina"),
+    entidad: str | None = Query(default=None, max_length=5, description="Clave de entidad federativa del complemento de nómina"),
+    periodicidad: str | None = Query(default=None, max_length=5, description="Periodicidad de pago del complemento de nómina"),
 ) -> dict:
     return {
         "tipo": tipo,
@@ -64,17 +74,83 @@ def _filtros(
         "estado_pago": estado_pago,
         "clasificacion": clasificacion,
         "concepto": concepto,
+        "uso_cfdi": uso_cfdi,
+        "registro_patronal": registro_patronal,
+        "entidad": entidad,
+        "periodicidad": periodicidad,
     }
 
 
+def _desglose_iva(c: Cfdi) -> list[TasaIvaRead]:
+    """IVA trasladado por tasa, a partir de cfdi_impuestos. En un REP, el IVA
+    pagado viene de los documentos relacionados (TrasladoDR)."""
+    if c.tipo == "pago":
+        iva = sum((Decimal(p.iva_pagado or 0) for p in c.pagos_relacionados), Decimal("0"))
+        return [TasaIvaRead(etiqueta="IVA pagado", base=0, importe=float(iva))] if iva else []
+    filas: dict[str, TasaIvaRead] = {}
+    for i in c.impuestos:
+        if i.impuesto != "002" or i.naturaleza != "traslado":
+            continue
+        etiqueta = "Exento" if (i.tipo_factor or "").lower() == "exento" else f"{float(i.tasa or 0) * 100:g}%"
+        fila = filas.setdefault(etiqueta, TasaIvaRead(etiqueta=etiqueta, base=0, importe=0))
+        fila.base += float(i.base or 0)
+        fila.importe += float(i.importe or 0)
+    return list(filas.values())
+
+
+def _en_declaracion(c: Cfdi, estado_pago: str | None, conciliado: str | None) -> bool | None:
+    """Si el comprobante cuenta para la declaración del periodo: vigente, que el
+    contador no lo marcara como no deducible / deducción personal, y con el pago
+    hecho (PUE, REP completo, pago manual) o conciliado en banco. El REP y la
+    nómina no se marcan: van por su propia vía en los impuestos."""
+    if c.tipo not in ("ingreso", "egreso", "nota_credito"):
+        return None
+    if c.estatus != "vigente" or not c.deducible:
+        return False
+    if c.tipo == "nota_credito":
+        return True
+    return estado_pago == "pagada" or conciliado == "conciliado"
+
+
 def _con_estado_pago(db: Session, *, empresa_id: uuid.UUID, cfdis: list[Cfdi]) -> list[CfdiRead]:
-    """Convierte a CfdiRead agregando lo pagado por REP y el estado de pago."""
+    """Convierte a CfdiRead agregando los derivados: lo pagado por REP, el estado
+    de pago, lo conciliado en banco, el desglose de IVA y los datos de REP/nómina."""
     pagado = crud.pagado_rep_de(db, empresa_id=empresa_id, uuids=[c.uuid_fiscal for c in cfdis if c.metodo_pago_codigo == "PPD"])
+    ligado = crud.conciliado_de(db, cfdi_ids=[c.id for c in cfdis])
     out = []
     for c in cfdis:
         p = pagado.get(c.uuid_fiscal, Decimal("0"))
+        importe_ligado = ligado.get(c.id, Decimal("0"))
+        estado_pago = crud.estado_pago_de(c, p)
+        conciliado = crud.estado_conciliado(c, importe_ligado)
+        extra: dict = {
+            "estado_pago": estado_pago,
+            "pagado_rep": float(p),
+            "conciliado": conciliado,
+            "conciliado_importe": float(importe_ligado),
+            "en_declaracion": _en_declaracion(c, estado_pago, conciliado),
+            "desglose_iva": _desglose_iva(c),
+        }
+        if c.tipo == "pago" and c.pagos_relacionados:
+            fechas = [d.fecha_pago for d in c.pagos_relacionados if d.fecha_pago]
+            extra.update(
+                rep_fecha_pago=max(fechas) if fechas else None,
+                rep_importe_pagado=float(sum((Decimal(d.imp_pagado or 0) for d in c.pagos_relacionados), Decimal("0"))),
+                rep_iva_pagado=float(sum((Decimal(d.iva_pagado or 0) for d in c.pagos_relacionados), Decimal("0"))),
+            )
+        if c.tipo == "nomina" and c.nomina is not None:
+            n = c.nomina
+            extra.update(
+                nomina_fecha_pago=n.fecha_pago,
+                nomina_percepciones=float(n.total_percepciones),
+                nomina_deducciones=float(n.total_deducciones),
+                nomina_otros_pagos=float(n.total_otros_pagos),
+                registro_patronal=n.registro_patronal,
+                entidad_codigo=n.clave_ent_fed,
+                periodicidad_codigo=n.periodicidad_pago,
+            )
         base = CfdiRead.model_validate(c, from_attributes=True)
-        out.append(base.model_copy(update={"estado_pago": crud.estado_pago_de(c, p), "pagado_rep": float(p)}))
+        out.append(base.model_copy(update=extra))
     return out
 
 
@@ -119,6 +195,16 @@ def valores_clasificacion(
     al clasificar) y cuántas facturas vigentes siguen sin clasificar."""
     conceptos, cuentas, sin_clasificar = crud.valores_clasificacion(db, empresa_id=ctx.empresa.id)
     return ValoresClasificacion(conceptos=conceptos, cuentas_contables=cuentas, sin_clasificar=sin_clasificar)
+
+
+@router.get("/filtros/valores", response_model=ValoresFiltros)
+def valores_filtros(
+    ctx: EmpresaContext = Depends(require_permissions("cfdi.leer")),
+    db: Session = Depends(get_db),
+) -> ValoresFiltros:
+    """Valores presentes en los CFDI de la empresa para poblar los filtros de la
+    lista: usos de CFDI y registro patronal / entidad / periodicidad de nómina."""
+    return ValoresFiltros(**crud.valores_filtros(db, empresa_id=ctx.empresa.id))
 
 
 @router.post("/clasificacion-masiva", response_model=ClasificacionMasivaResultado)
@@ -218,9 +304,26 @@ def detalle(
             )
             for p in carga_xml.pagos_de_factura(db, empresa_id=ctx.empresa.id, uuid_fiscal=cfdi.uuid_fiscal)
         ]
+    # Para "ir directo" del REP a las facturas que liquida: id de cada factura
+    # relacionada que esté en la bóveda, resuelto en una sola consulta.
+    from sqlalchemy import select as sa_select
+
+    from app.modules.cfdi.models import Cfdi as CfdiModel
+
+    uuids_relacionados = [p.uuid_relacionado for p in cfdi.pagos_relacionados]
+    ids_por_uuid: dict[str, uuid.UUID] = {}
+    if uuids_relacionados:
+        ids_por_uuid = dict(
+            db.execute(
+                sa_select(CfdiModel.uuid_fiscal, CfdiModel.id).where(
+                    CfdiModel.empresa_id == ctx.empresa.id, CfdiModel.uuid_fiscal.in_(uuids_relacionados)
+                )
+            ).all()
+        )
     pagos_relacionados = [
         PagoDoctoRead(
             cfdi_pago_id=p.cfdi_pago_id, uuid_pago=cfdi.uuid_fiscal, uuid_relacionado=p.uuid_relacionado,
+            cfdi_relacionado_id=ids_por_uuid.get(p.uuid_relacionado),
             num_parcialidad=p.num_parcialidad, imp_saldo_anterior=p.imp_saldo_anterior, imp_pagado=p.imp_pagado,
             imp_saldo_insoluto=p.imp_saldo_insoluto, iva_pagado=p.iva_pagado, fecha_pago=p.fecha_pago, forma_pago_codigo=p.forma_pago_codigo,
         )
@@ -230,6 +333,59 @@ def detalle(
     if cfdi.metodo_pago_codigo == "PPD":
         # Marcada a mano = saldada, aunque no haya REP que la cubra.
         saldo = 0.0 if cfdi.pagada_manualmente else float(cfdi.total) - float(sum((p.imp_pagado for p in pagos_recibidos), 0))
+
+    # Movimientos bancarios ligados en la conciliación (para mostrar el estatus
+    # y comparar las fechas del estado de cuenta contra el complemento).
+    from app.modules.conciliacion.models import LigaConciliacion
+
+    ligas_bancarias = [
+        LigaBancariaRead(
+            movimiento_id=liga.movimiento_id,
+            fecha=liga.movimiento.fecha,
+            concepto=liga.movimiento.concepto,
+            referencia=liga.movimiento.referencia,
+            cuenta=liga.movimiento.cuenta.alias,
+            importe=float(liga.importe),
+        )
+        for liga in db.scalars(sa_select(LigaConciliacion).where(LigaConciliacion.cfdi_id == cfdi.id))
+    ]
+
+    # Complemento de nómina. CURP, NSS, cuenta bancaria y salarios de cotización
+    # solo con el permiso nomina.leer (mismo criterio que los reportes).
+    nomina = None
+    if cfdi.nomina is not None:
+        n = cfdi.nomina
+        sensibles = (
+            {
+                "curp_receptor": n.curp_receptor,
+                "num_seguridad_social": n.num_seguridad_social,
+                "banco": n.banco,
+                "cuenta_bancaria": n.cuenta_bancaria,
+                "salario_base_cot_apor": float(n.salario_base_cot_apor) if n.salario_base_cot_apor is not None else None,
+                "salario_diario_integrado": float(n.salario_diario_integrado) if n.salario_diario_integrado is not None else None,
+            }
+            if "nomina.leer" in ctx.permisos
+            else {}
+        )
+        nomina = NominaDetalleRead(
+            tipo_nomina=n.tipo_nomina,
+            fecha_pago=n.fecha_pago,
+            fecha_inicial_pago=n.fecha_inicial_pago,
+            fecha_final_pago=n.fecha_final_pago,
+            num_dias_pagados=float(n.num_dias_pagados) if n.num_dias_pagados is not None else None,
+            total_percepciones=float(n.total_percepciones),
+            total_deducciones=float(n.total_deducciones),
+            total_otros_pagos=float(n.total_otros_pagos),
+            registro_patronal=n.registro_patronal,
+            periodicidad_pago=n.periodicidad_pago,
+            clave_ent_fed=n.clave_ent_fed,
+            num_empleado=n.num_empleado,
+            departamento=n.departamento,
+            puesto=n.puesto,
+            conceptos=[NominaConceptoRead.model_validate(cn, from_attributes=True) for cn in n.conceptos],
+            **sensibles,
+        )
+
     base = _con_estado_pago(db, empresa_id=ctx.empresa.id, cfdis=[cfdi])[0]
     return CfdiDetalleRead(
         **base.model_dump(),
@@ -239,6 +395,9 @@ def detalle(
         pagos_relacionados=pagos_relacionados,
         saldo_pendiente=saldo,
         tiene_xml=bool(cfdi.xml),
+        impuestos=[DesgloseImpuestoRead.model_validate(i, from_attributes=True) for i in cfdi.impuestos],
+        ligas_bancarias=ligas_bancarias,
+        nomina=nomina,
     )
 
 

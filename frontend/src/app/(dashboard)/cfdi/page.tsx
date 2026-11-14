@@ -18,6 +18,7 @@ import { ApiError, apiDownload, apiFetch } from "@/lib/api";
 import { exportarExcel } from "@/lib/export-xlsx";
 import { formatDate, formatMoney, formatMoney2, formatPeso } from "@/lib/format";
 import { PERM, can } from "@/lib/permissions";
+import { GRUPO_NOMINA, entidadEtiqueta, periodicidadEtiqueta, usoCfdiEtiqueta } from "@/lib/sat";
 import { cn } from "@/lib/utils";
 import { CLASIFICACIONES } from "@/lib/types";
 import type {
@@ -32,7 +33,9 @@ import type {
   Clasificacion,
   ClasificacionMasivaResultado,
   EstadoPago,
+  NominaConcepto,
   ValoresClasificacion,
+  ValoresFiltros,
 } from "@/lib/types";
 
 const SEVERIDAD_VARIANT = { alta: "destructive", media: "warning", baja: "success" } as const;
@@ -89,6 +92,10 @@ interface Filtros {
   estadoPago: string;
   clasificacion: string;
   concepto: string;
+  uso: string;
+  registroPatronal: string;
+  entidad: string;
+  periodicidad: string;
 }
 
 const FILTROS_VACIOS: Filtros = {
@@ -103,7 +110,30 @@ const FILTROS_VACIOS: Filtros = {
   estadoPago: TODOS,
   clasificacion: TODOS,
   concepto: "",
+  uso: TODOS,
+  registroPatronal: TODOS,
+  entidad: TODOS,
+  periodicidad: TODOS,
 };
+
+/** Filtros que no aplican en cada pestaña: al cambiar de pestaña se limpian
+ * para no dejar un filtro activo que ya no se ve (p. ej. método PPD en Pagos). */
+function filtrosAplicables(f: Filtros, tab: TabTipo): Filtros {
+  const limpio = { ...f };
+  if (tab === "pago" || tab === "nomina") {
+    limpio.metodo = TODOS;
+    limpio.estadoPago = TODOS;
+    limpio.clasificacion = TODOS;
+    limpio.concepto = "";
+    limpio.uso = TODOS;
+  }
+  if (tab !== "nomina") {
+    limpio.registroPatronal = TODOS;
+    limpio.entidad = TODOS;
+    limpio.periodicidad = TODOS;
+  }
+  return limpio;
+}
 const PAGE_SIZE = 100;
 
 // La carga de XML va por lotes: un ejercicio completo son miles de archivos y
@@ -206,6 +236,7 @@ export default function CfdiPageRoute() {
   // --- clasificación del papel de trabajo: selección múltiple en la tabla y
   // captura por lote o factura por factura ---
   const [valores, setValores] = useState<ValoresClasificacion | null>(null);
+  const [valoresFiltros, setValoresFiltros] = useState<ValoresFiltros | null>(null);
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
   const [openClasif, setOpenClasif] = useState(false);
   const [formClasif, setFormClasif] = useState<FormClasificacion>(CLASIFICACION_VACIA);
@@ -219,6 +250,11 @@ export default function CfdiPageRoute() {
       setValores(await apiFetch<ValoresClasificacion>("/cfdi/clasificacion/valores"));
     } catch {
       setValores(null);
+    }
+    try {
+      setValoresFiltros(await apiFetch<ValoresFiltros>("/cfdi/filtros/valores"));
+    } catch {
+      setValoresFiltros(null);
     }
   }, []);
 
@@ -363,6 +399,10 @@ export default function CfdiPageRoute() {
       if (aplicados.estadoPago !== TODOS) p.set("estado_pago", aplicados.estadoPago);
       if (aplicados.clasificacion !== TODOS) p.set("clasificacion", aplicados.clasificacion);
       if (aplicados.concepto.trim()) p.set("concepto", aplicados.concepto.trim());
+      if (aplicados.uso !== TODOS) p.set("uso_cfdi", aplicados.uso);
+      if (aplicados.registroPatronal !== TODOS) p.set("registro_patronal", aplicados.registroPatronal);
+      if (aplicados.entidad !== TODOS) p.set("entidad", aplicados.entidad);
+      if (aplicados.periodicidad !== TODOS) p.set("periodicidad", aplicados.periodicidad);
       return p;
     },
     [tab, aplicados],
@@ -409,9 +449,14 @@ export default function CfdiPageRoute() {
     setOffset(0);
   }
   function cambiarTab(v: string) {
-    setTab(v as TabTipo);
+    const nuevo = v as TabTipo;
+    setTab(nuevo);
     setOffset(0);
     setSeleccion(new Set());
+    // Los filtros que no se ven en la nueva pestaña se limpian: un filtro
+    // activo pero invisible deja la lista vacía sin explicación.
+    setFiltros((f) => filtrosAplicables(f, nuevo));
+    setAplicados((f) => filtrosAplicables(f, nuevo));
   }
 
   function alternarSeleccion(id: string) {
@@ -440,33 +485,69 @@ export default function CfdiPageRoute() {
   function exportar() {
     if (!page) return;
     const hoja = TABS.find((t) => t.value === tab)?.label ?? "CFDI";
+    const conciliadoTxt = (c: Cfdi) => (c.conciliado === "conciliado" ? "Conciliado" : c.conciliado === "parcial" ? "Parcial" : "Sin conciliar");
     exportarExcel(`nubinox-cfdi-${hoja.toLowerCase()}-${empresaActiva!.empresa.rfc}`, {
-      [hoja]: page.items.map((c) => ({
-        Fecha: c.fecha,
-        UUID: c.uuid_fiscal,
-        Serie: c.serie ?? "",
-        Folio: c.folio ?? "",
-        Versión: c.version ?? "",
-        Tipo: TIPO_LABEL[c.tipo],
-        Dirección: c.direccion,
-        "RFC emisor": c.rfc_emisor,
-        Emisor: c.nombre_emisor,
-        "RFC receptor": c.rfc_receptor,
-        Receptor: c.nombre_receptor,
-        "Método de pago": c.metodo_pago_codigo ?? "",
-        "Forma de pago": c.forma_pago_codigo ? `${c.forma_pago_codigo} ${formaNombre[c.forma_pago_codigo] ?? ""}`.trim() : "",
-        "Uso CFDI": c.uso_cfdi_codigo ?? "",
-        Subtotal: c.subtotal,
-        IVA: c.iva,
-        Total: c.total,
-        Estatus: ESTATUS_LABEL[c.estatus],
-        "Estado de pago":
-          c.estado_pago && c.metodo_pago_codigo === "PPD" ? `${PAGO_LABEL[c.estado_pago]}${c.pago_manual_fecha ? ` (a mano ${c.pago_manual_fecha})` : ""}` : "",
-        Clasificación: c.clasificacion ? CLASIF_LABEL[c.clasificacion] : "",
-        Concepto: c.concepto ?? "",
-        "Cuenta contable": c.cuenta_contable ?? "",
-        "Referencia bancaria": c.referencia_bancaria ?? "",
-      })),
+      [hoja]: page.items.map((c) => {
+        const base = {
+          Fecha: c.fecha,
+          UUID: c.uuid_fiscal,
+          Serie: c.serie ?? "",
+          Folio: c.folio ?? "",
+          Versión: c.version ?? "",
+          Tipo: TIPO_LABEL[c.tipo],
+          Dirección: c.direccion,
+          "RFC emisor": c.rfc_emisor,
+          Emisor: c.nombre_emisor,
+          "RFC receptor": c.rfc_receptor,
+          Receptor: c.nombre_receptor,
+        };
+        if (tab === "pago") {
+          return {
+            ...base,
+            "Fecha de pago": c.rep_fecha_pago ?? "",
+            "Importe pagado": c.rep_importe_pagado,
+            "IVA pagado": c.rep_iva_pagado,
+            Estatus: ESTATUS_LABEL[c.estatus],
+            Conciliado: conciliadoTxt(c),
+          };
+        }
+        if (tab === "nomina") {
+          return {
+            ...base,
+            "Fecha de pago": c.nomina_fecha_pago ?? "",
+            Percepciones: c.nomina_percepciones ?? "",
+            Deducciones: c.nomina_deducciones ?? "",
+            "Otros pagos": c.nomina_otros_pagos ?? "",
+            Total: c.total,
+            "Registro patronal": c.registro_patronal ?? "",
+            Entidad: entidadEtiqueta(c.entidad_codigo),
+            Periodicidad: periodicidadEtiqueta(c.periodicidad_codigo),
+            Estatus: ESTATUS_LABEL[c.estatus],
+            Conciliado: conciliadoTxt(c),
+          };
+        }
+        return {
+          ...base,
+          "Método de pago": c.metodo_pago_codigo ?? "",
+          "Forma de pago": c.forma_pago_codigo ? `${c.forma_pago_codigo} ${formaNombre[c.forma_pago_codigo] ?? ""}`.trim() : "",
+          "Uso CFDI": c.uso_cfdi_codigo ?? "",
+          Subtotal: c.subtotal,
+          IVA: c.iva,
+          "Desglose IVA": c.desglose_iva.map((d) => `${d.etiqueta}: ${d.importe}`).join(" · "),
+          Total: c.total,
+          Estatus: ESTATUS_LABEL[c.estatus],
+          "Estado de pago":
+            c.estado_pago && c.metodo_pago_codigo === "PPD"
+              ? `${PAGO_LABEL[c.estado_pago]}${c.pago_manual_fecha ? ` (a mano ${c.pago_manual_fecha})` : ""}`
+              : "",
+          Conciliado: conciliadoTxt(c),
+          Declaración: c.en_declaracion == null ? "" : c.en_declaracion ? "Sí" : "No",
+          Clasificación: c.clasificacion ? CLASIF_LABEL[c.clasificacion] : "",
+          Concepto: c.concepto ?? "",
+          "Cuenta contable": c.cuenta_contable ?? "",
+          "Referencia bancaria": c.referencia_bancaria ?? "",
+        };
+      }),
     });
   }
 
@@ -478,16 +559,17 @@ export default function CfdiPageRoute() {
   // Cuántos filtros plegados están puestos, para que no se olviden aplicados.
   const filtrosAvanzadosActivos =
     (["emisor", "receptor", "concepto"] as const).filter((k) => aplicados[k].trim()).length +
-    (["estatus", "metodo", "forma", "clasificacion"] as const).filter((k) => aplicados[k] !== TODOS).length;
+    (["estatus", "metodo", "forma", "clasificacion", "uso"] as const).filter((k) => aplicados[k] !== TODOS).length;
   const archivosLista = Array.from(archivosXml ?? []);
   const archivosSeleccionados = archivosLista.length;
   const bytesSeleccionados = archivosLista.reduce((t, a) => t + a.size, 0);
   const lotesPrevistos = archivosSeleccionados ? armarLotes(archivosLista).length : 0;
   const seleccionablesVisibles = (page?.items ?? []).filter(esClasificable);
   const seleccionadasFueraDePantalla = Array.from(seleccion).filter((id) => !(page?.items ?? []).some((c) => c.id === id)).length;
-  // Fecha, UUID, serie/folio, emisor, receptor, método, forma, subtotal, total,
-  // estatus, pago y clasificación; +1 por la columna "Tipo" y +1 por la casilla.
-  const columnas = 12 + (tab === "todos" ? 1 : 0) + (puedeEditar ? 1 : 0);
+  // Cada pestaña tiene sus propias columnas (revisión de octubre 2026): los
+  // REP y la nómina ya no cargan método/forma/subtotal, que ahí no significan nada.
+  const conCasilla = puedeEditar && tab !== "pago" && tab !== "nomina";
+  const columnas = tab === "pago" ? 10 : tab === "nomina" ? 13 : 16 + (tab === "todos" ? 1 : 0) + (conCasilla ? 1 : 0);
   const totalPaginas = page ? Math.max(1, Math.ceil(page.total / PAGE_SIZE)) : 1;
   const paginaActual = Math.floor(offset / PAGE_SIZE) + 1;
 
@@ -613,6 +695,49 @@ export default function CfdiPageRoute() {
                 </SelectContent>
               </Select>
             )}
+            {tab === "nomina" && (
+              <>
+                <Select value={filtros.registroPatronal} onValueChange={(v) => setFiltros({ ...filtros, registroPatronal: v })}>
+                  <SelectTrigger className="w-[190px]">
+                    <SelectValue placeholder="Registro patronal" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={TODOS}>Todo registro patronal</SelectItem>
+                    {(valoresFiltros?.registros_patronales ?? []).map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {r}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={filtros.entidad} onValueChange={(v) => setFiltros({ ...filtros, entidad: v })}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue placeholder="Entidad" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={TODOS}>Toda entidad</SelectItem>
+                    {(valoresFiltros?.entidades ?? []).map((e) => (
+                      <SelectItem key={e} value={e}>
+                        {entidadEtiqueta(e)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={filtros.periodicidad} onValueChange={(v) => setFiltros({ ...filtros, periodicidad: v })}>
+                  <SelectTrigger className="w-[170px]">
+                    <SelectValue placeholder="Periodicidad" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={TODOS}>Toda periodicidad</SelectItem>
+                    {(valoresFiltros?.periodicidades ?? []).map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {periodicidadEtiqueta(p)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </>
+            )}
             <Button variant="ghost" onClick={() => setMasFiltros((v) => !v)}>
               <SlidersHorizontal className="mr-1 h-4 w-4" />
               {masFiltros ? "Menos filtros" : "Más filtros"}
@@ -659,31 +784,50 @@ export default function CfdiPageRoute() {
                   <SelectItem value="en_proceso">En proceso de cancelación</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={filtros.metodo} onValueChange={(v) => setFiltros({ ...filtros, metodo: v })}>
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Método" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={TODOS}>PUE y PPD</SelectItem>
-                  <SelectItem value="PUE">PUE · una exhibición</SelectItem>
-                  <SelectItem value="PPD">PPD · parcialidades</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={filtros.forma} onValueChange={(v) => setFiltros({ ...filtros, forma: v })}>
-                <SelectTrigger className="w-[220px]">
-                  <SelectValue placeholder="Forma de pago" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={TODOS}>Toda forma de pago</SelectItem>
-                  {formasPago.map((f) => (
-                    <SelectItem key={f.codigo} value={f.codigo}>
-                      {f.codigo} · {f.nombre}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {/* Método y forma de pago no significan nada en un REP ni en un
+                  recibo de nómina: ahí no se ofrecen (revisión de octubre 2026). */}
+              {tab !== "pago" && tab !== "nomina" && (
+                <Select value={filtros.metodo} onValueChange={(v) => setFiltros({ ...filtros, metodo: v })}>
+                  <SelectTrigger className="w-[150px]">
+                    <SelectValue placeholder="Método" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={TODOS}>PUE y PPD</SelectItem>
+                    <SelectItem value="PUE">PUE · una exhibición</SelectItem>
+                    <SelectItem value="PPD">PPD · parcialidades</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+              {tab !== "pago" && tab !== "nomina" && (
+                <Select value={filtros.forma} onValueChange={(v) => setFiltros({ ...filtros, forma: v })}>
+                  <SelectTrigger className="w-[220px]">
+                    <SelectValue placeholder="Forma de pago" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={TODOS}>Toda forma de pago</SelectItem>
+                    {formasPago.map((f) => (
+                      <SelectItem key={f.codigo} value={f.codigo}>
+                        {f.codigo} · {f.nombre}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               {tab !== "pago" && tab !== "nomina" && (
                 <>
+                  <Select value={filtros.uso} onValueChange={(v) => setFiltros({ ...filtros, uso: v })}>
+                    <SelectTrigger className="w-[220px]">
+                      <SelectValue placeholder="Uso CFDI" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={TODOS}>Todo uso de CFDI</SelectItem>
+                      {(valoresFiltros?.usos_cfdi ?? []).map((u) => (
+                        <SelectItem key={u} value={u}>
+                          {usoCfdiEtiqueta(u)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Select value={filtros.clasificacion} onValueChange={(v) => setFiltros({ ...filtros, clasificacion: v })}>
                     <SelectTrigger className="w-[190px]">
                       <SelectValue placeholder="Clasificación" />
@@ -746,7 +890,7 @@ export default function CfdiPageRoute() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  {puedeEditar && (
+                  {conCasilla && (
                     <TableHead className="w-8">
                       <input
                         type="checkbox"
@@ -763,19 +907,56 @@ export default function CfdiPageRoute() {
                       />
                     </TableHead>
                   )}
-                  <TableHead>Fecha</TableHead>
-                  <TableHead>UUID</TableHead>
-                  <TableHead className="whitespace-nowrap">Serie / Folio</TableHead>
-                  {tab === "todos" && <TableHead>Tipo</TableHead>}
-                  <TableHead>Emisor</TableHead>
-                  <TableHead>Receptor</TableHead>
-                  <TableHead>Método</TableHead>
-                  <TableHead className="whitespace-nowrap">Forma de pago</TableHead>
-                  <TableHead className="text-right">Subtotal</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
-                  <TableHead>Estatus</TableHead>
-                  <TableHead>Pago</TableHead>
-                  <TableHead>Clasificación</TableHead>
+                  {tab === "pago" ? (
+                    <>
+                      <TableHead className="whitespace-nowrap">Fecha de pago</TableHead>
+                      <TableHead className="whitespace-nowrap">Fecha emisión</TableHead>
+                      <TableHead>UUID</TableHead>
+                      <TableHead className="whitespace-nowrap">Serie / Folio</TableHead>
+                      <TableHead>Emisor</TableHead>
+                      <TableHead>Receptor</TableHead>
+                      <TableHead className="text-right whitespace-nowrap">Importe pagado</TableHead>
+                      <TableHead className="text-right whitespace-nowrap">IVA pagado</TableHead>
+                      <TableHead>Estatus</TableHead>
+                      <TableHead>Conciliado</TableHead>
+                    </>
+                  ) : tab === "nomina" ? (
+                    <>
+                      <TableHead className="whitespace-nowrap">Fecha de pago</TableHead>
+                      <TableHead>UUID</TableHead>
+                      <TableHead className="whitespace-nowrap">Serie / Folio</TableHead>
+                      <TableHead>Empleado</TableHead>
+                      <TableHead className="text-right">Percepciones</TableHead>
+                      <TableHead className="text-right">Deducciones</TableHead>
+                      <TableHead className="text-right whitespace-nowrap">Otros pagos</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead className="whitespace-nowrap">Registro patronal</TableHead>
+                      <TableHead>Entidad</TableHead>
+                      <TableHead>Periodicidad</TableHead>
+                      <TableHead>Estatus</TableHead>
+                      <TableHead>Conciliado</TableHead>
+                    </>
+                  ) : (
+                    <>
+                      <TableHead>Fecha</TableHead>
+                      <TableHead>UUID</TableHead>
+                      <TableHead className="whitespace-nowrap">Serie / Folio</TableHead>
+                      {tab === "todos" && <TableHead>Tipo</TableHead>}
+                      <TableHead>Emisor</TableHead>
+                      <TableHead>Receptor</TableHead>
+                      <TableHead>Método</TableHead>
+                      <TableHead className="whitespace-nowrap">Forma de pago</TableHead>
+                      <TableHead>Uso</TableHead>
+                      <TableHead className="text-right">Subtotal</TableHead>
+                      <TableHead className="text-right">IVA</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead>Estatus</TableHead>
+                      <TableHead>Pago</TableHead>
+                      <TableHead>Conciliado</TableHead>
+                      <TableHead>Declaración</TableHead>
+                      <TableHead>Clasificación</TableHead>
+                    </>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -789,7 +970,7 @@ export default function CfdiPageRoute() {
                 {!loading &&
                   page?.items.map((c) => (
                     <TableRow key={c.id} className="cursor-pointer" onClick={() => verDetalle(c.id)}>
-                      {puedeEditar && (
+                      {conCasilla && (
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           {esClasificable(c) ? (
                             <input
@@ -802,66 +983,143 @@ export default function CfdiPageRoute() {
                           ) : null}
                         </TableCell>
                       )}
-                      <TableCell className="whitespace-nowrap">{formatDate(c.fecha)}</TableCell>
+                      {tab === "pago" && (
+                        <TableCell className="whitespace-nowrap font-medium">{c.rep_fecha_pago ? formatDate(c.rep_fecha_pago) : "—"}</TableCell>
+                      )}
+                      {tab === "nomina" && (
+                        <TableCell className="whitespace-nowrap font-medium">
+                          {c.nomina_fecha_pago ? formatDate(c.nomina_fecha_pago) : formatDate(c.fecha)}
+                        </TableCell>
+                      )}
+                      {tab !== "nomina" && (
+                        <TableCell className={cn("whitespace-nowrap", tab === "pago" && "text-muted-foreground")}>{formatDate(c.fecha)}</TableCell>
+                      )}
                       <TableCell className="whitespace-nowrap font-mono text-xs" title={c.uuid_fiscal}>
                         {c.uuid_fiscal.slice(0, 8)}…{c.uuid_fiscal.slice(-4)}
                       </TableCell>
                       <TableCell className="whitespace-nowrap font-mono text-xs">{[c.serie, c.folio].filter(Boolean).join("-") || "—"}</TableCell>
                       {tab === "todos" && <TableCell>{TIPO_LABEL[c.tipo]}</TableCell>}
-                      <TableCell className="max-w-56">
-                        <span className="block truncate" title={c.nombre_emisor}>
-                          {c.nombre_emisor}
-                        </span>
-                        <span className="font-mono text-xs text-muted-foreground">{c.rfc_emisor}</span>
-                      </TableCell>
+                      {tab !== "nomina" && (
+                        <TableCell className="max-w-56">
+                          <span className="block truncate" title={c.nombre_emisor}>
+                            {c.nombre_emisor}
+                          </span>
+                          <span className="font-mono text-xs text-muted-foreground">{c.rfc_emisor}</span>
+                        </TableCell>
+                      )}
                       <TableCell className="max-w-56">
                         <span className="block truncate" title={c.nombre_receptor}>
                           {c.nombre_receptor}
                         </span>
                         <span className="font-mono text-xs text-muted-foreground">{c.rfc_receptor}</span>
                       </TableCell>
-                      <TableCell>
-                        {c.metodo_pago_codigo ? (
-                          <Badge variant={c.metodo_pago_codigo === "PPD" ? "warning" : "outline"}>{c.metodo_pago_codigo}</Badge>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="max-w-40 truncate text-xs" title={c.forma_pago_codigo ? formaNombre[c.forma_pago_codigo] : ""}>
-                        {c.forma_pago_codigo ? `${c.forma_pago_codigo} · ${formaNombre[c.forma_pago_codigo] ?? ""}` : "—"}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">{formatMoney(c.subtotal)}</TableCell>
-                      <TableCell className="text-right font-medium tabular-nums">{formatMoney(c.total)}</TableCell>
+                      {tab === "pago" && (
+                        <>
+                          <TableCell className="text-right font-medium tabular-nums">{formatMoney2(c.rep_importe_pagado)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{formatMoney2(c.rep_iva_pagado)}</TableCell>
+                        </>
+                      )}
+                      {tab === "nomina" && (
+                        <>
+                          <TableCell className="text-right tabular-nums">{c.nomina_percepciones != null ? formatMoney(c.nomina_percepciones) : "—"}</TableCell>
+                          <TableCell className="text-right tabular-nums">{c.nomina_deducciones != null ? formatMoney(c.nomina_deducciones) : "—"}</TableCell>
+                          <TableCell className="text-right tabular-nums">{c.nomina_otros_pagos != null ? formatMoney(c.nomina_otros_pagos) : "—"}</TableCell>
+                          <TableCell className="text-right font-medium tabular-nums">{formatMoney(c.total)}</TableCell>
+                          <TableCell className="whitespace-nowrap font-mono text-xs">{c.registro_patronal ?? "—"}</TableCell>
+                          <TableCell className="whitespace-nowrap text-xs">{entidadEtiqueta(c.entidad_codigo)}</TableCell>
+                          <TableCell className="whitespace-nowrap text-xs">{periodicidadEtiqueta(c.periodicidad_codigo)}</TableCell>
+                        </>
+                      )}
+                      {tab !== "pago" && tab !== "nomina" && (
+                        <>
+                          <TableCell>
+                            {c.metodo_pago_codigo ? (
+                              <Badge
+                                variant={c.metodo_pago_codigo !== "PPD" ? "outline" : c.pagado_rep > 0 ? "info" : "warning"}
+                                title={c.metodo_pago_codigo === "PPD" && c.pagado_rep > 0 ? "PPD con complemento de pago generado" : undefined}
+                              >
+                                {c.metodo_pago_codigo}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="max-w-40 truncate text-xs" title={c.forma_pago_codigo ? formaNombre[c.forma_pago_codigo] : ""}>
+                            {c.forma_pago_codigo ? `${c.forma_pago_codigo} · ${formaNombre[c.forma_pago_codigo] ?? ""}` : "—"}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-xs" title={usoCfdiEtiqueta(c.uso_cfdi_codigo)}>
+                            {c.uso_cfdi_codigo ?? "—"}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">{formatMoney(c.subtotal)}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatMoney(c.iva)}
+                            {c.desglose_iva.length > 0 && (
+                              <span
+                                className="block whitespace-nowrap text-xs text-muted-foreground"
+                                title={c.desglose_iva.map((d) => `${d.etiqueta}: base ${formatMoney2(d.base)}, IVA ${formatMoney2(d.importe)}`).join(" · ")}
+                              >
+                                {c.desglose_iva.map((d) => d.etiqueta).join(" · ")}
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right font-medium tabular-nums">{formatMoney(c.total)}</TableCell>
+                        </>
+                      )}
                       <TableCell>
                         <Badge variant={ESTATUS_VARIANT[c.estatus]}>{c.estatus === "en_proceso" ? "En proceso" : ESTATUS_LABEL[c.estatus]}</Badge>
                       </TableCell>
+                      {tab !== "pago" && tab !== "nomina" && (
+                        <TableCell>
+                          {c.estado_pago && c.metodo_pago_codigo === "PPD" ? (
+                            <Badge
+                              variant={PAGO_VARIANT[c.estado_pago]}
+                              title={c.pago_manual_fecha ? `Registrada a mano el ${formatDate(c.pago_manual_fecha)}` : undefined}
+                            >
+                              {PAGO_LABEL[c.estado_pago]}
+                              {c.pago_manual_fecha ? " · a mano" : ""}
+                            </Badge>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell>
-                        {c.estado_pago && c.metodo_pago_codigo === "PPD" ? (
-                          <Badge
-                            variant={PAGO_VARIANT[c.estado_pago]}
-                            title={c.pago_manual_fecha ? `Registrada a mano el ${formatDate(c.pago_manual_fecha)}` : undefined}
-                          >
-                            {PAGO_LABEL[c.estado_pago]}
-                            {c.pago_manual_fecha ? " · a mano" : ""}
-                          </Badge>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
+                        <BadgeConciliado c={c} />
                       </TableCell>
-                      <TableCell className="max-w-44">
-                        {c.clasificacion ? (
-                          <Badge variant={CLASIF_VARIANT[c.clasificacion]}>{CLASIF_LABEL[c.clasificacion]}</Badge>
-                        ) : esClasificable(c) ? (
-                          <span className="text-xs text-muted-foreground">Sin clasificar</span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                        {(c.concepto || c.cuenta_contable) && (
-                          <span className="block truncate text-xs text-muted-foreground" title={[c.concepto, c.cuenta_contable].filter(Boolean).join(" · ")}>
-                            {[c.concepto, c.cuenta_contable].filter(Boolean).join(" · ")}
-                          </span>
-                        )}
-                      </TableCell>
+                      {tab !== "pago" && tab !== "nomina" && (
+                        <>
+                          <TableCell>
+                            {c.en_declaracion == null ? (
+                              <span className="text-muted-foreground">—</span>
+                            ) : c.en_declaracion ? (
+                              <Badge variant="success" title="Vigente, deducible y con el pago hecho o conciliado">
+                                Sí
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" title="Cancelada, marcada como no deducible o con el pago pendiente">
+                                No
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="max-w-44">
+                            {c.clasificacion ? (
+                              <Badge variant={CLASIF_VARIANT[c.clasificacion]}>{CLASIF_LABEL[c.clasificacion]}</Badge>
+                            ) : esClasificable(c) ? (
+                              <span className="text-xs text-muted-foreground">Sin clasificar</span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                            {(c.concepto || c.cuenta_contable) && (
+                              <span
+                                className="block truncate text-xs text-muted-foreground"
+                                title={[c.concepto, c.cuenta_contable].filter(Boolean).join(" · ")}
+                              >
+                                {[c.concepto, c.cuenta_contable].filter(Boolean).join(" · ")}
+                              </span>
+                            )}
+                          </TableCell>
+                        </>
+                      )}
                     </TableRow>
                   ))}
                 {!loading && page?.items.length === 0 && (
@@ -920,23 +1178,75 @@ export default function CfdiPageRoute() {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-x-6 gap-y-1 rounded-md border p-3 sm:grid-cols-3">
-                  <Dato k="Fecha" v={formatDate(detalle.fecha)} />
+                  <Dato k="Fecha de emisión" v={formatDate(detalle.fecha)} />
                   <Dato k="Versión" v={detalle.version ?? "—"} />
                   <Dato k="Dirección" v={detalle.direccion === "emitido" ? "Emitido" : "Recibido"} />
-                  <Dato
-                    k="Método de pago"
-                    v={
-                      detalle.metodo_pago_codigo
-                        ? `${detalle.metodo_pago_codigo} · ${detalle.metodo_pago_codigo === "PUE" ? "una sola exhibición" : "parcialidades o diferido"}`
-                        : "—"
-                    }
-                  />
-                  <Dato
-                    k="Forma de pago"
-                    v={detalle.forma_pago_codigo ? `${detalle.forma_pago_codigo} · ${formaNombre[detalle.forma_pago_codigo] ?? ""}` : "—"}
-                  />
-                  <Dato k="Uso CFDI" v={detalle.uso_cfdi_codigo ?? "—"} />
+                  {/* En un REP y en la nómina, método/forma de pago del comprobante
+                      no dicen nada: en su lugar va la fecha de pago real. */}
+                  {detalle.tipo === "pago" ? (
+                    <Dato k="Fecha de pago" v={detalle.rep_fecha_pago ? formatDate(detalle.rep_fecha_pago) : "—"} />
+                  ) : detalle.tipo === "nomina" ? (
+                    <>
+                      <Dato k="Fecha de pago" v={detalle.nomina?.fecha_pago ? formatDate(detalle.nomina.fecha_pago) : "—"} />
+                      <Dato k="Periodicidad" v={periodicidadEtiqueta(detalle.nomina?.periodicidad_pago ?? null)} />
+                    </>
+                  ) : (
+                    <>
+                      <Dato
+                        k="Método de pago"
+                        v={
+                          detalle.metodo_pago_codigo
+                            ? `${detalle.metodo_pago_codigo} · ${detalle.metodo_pago_codigo === "PUE" ? "una sola exhibición" : "parcialidades o diferido"}`
+                            : "—"
+                        }
+                      />
+                      <Dato
+                        k="Forma de pago"
+                        v={detalle.forma_pago_codigo ? `${detalle.forma_pago_codigo} · ${formaNombre[detalle.forma_pago_codigo] ?? ""}` : "—"}
+                      />
+                    </>
+                  )}
+                  {detalle.tipo !== "nomina" && detalle.tipo !== "pago" && <Dato k="Uso CFDI" v={usoCfdiEtiqueta(detalle.uso_cfdi_codigo)} />}
+                  {detalle.en_declaracion != null && (
+                    <div>
+                      <p className="text-xs text-muted-foreground">Declaración</p>
+                      <Badge
+                        variant={detalle.en_declaracion ? "success" : "outline"}
+                        title="Automático: vigente, deducible y con el pago hecho o conciliado. Se mueve a mano con la clasificación."
+                      >
+                        {detalle.en_declaracion ? "Sí se considera" : "No se considera"}
+                      </Badge>
+                    </div>
+                  )}
                 </div>
+
+                {detalle.tipo === "nomina" && detalle.nomina && (
+                  <div className="space-y-2 rounded-md border p-3">
+                    <p className="font-medium">Datos del recibo</p>
+                    <div className="grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-3">
+                      <Dato k="Registro patronal" v={detalle.nomina.registro_patronal ?? "—"} />
+                      <Dato k="Entidad federativa" v={entidadEtiqueta(detalle.nomina.clave_ent_fed)} />
+                      <Dato
+                        k="Periodo"
+                        v={
+                          detalle.nomina.fecha_inicial_pago && detalle.nomina.fecha_final_pago
+                            ? `${formatDate(detalle.nomina.fecha_inicial_pago)} – ${formatDate(detalle.nomina.fecha_final_pago)}`
+                            : "—"
+                        }
+                      />
+                      <Dato k="Días pagados" v={detalle.nomina.num_dias_pagados != null ? String(detalle.nomina.num_dias_pagados) : "—"} />
+                      <Dato
+                        k="Tipo de nómina"
+                        v={detalle.nomina.tipo_nomina === "E" ? "Extraordinaria" : detalle.nomina.tipo_nomina === "O" ? "Ordinaria" : "—"}
+                      />
+                      <Dato k="Núm. empleado" v={detalle.nomina.num_empleado ?? "—"} />
+                      {detalle.nomina.puesto && <Dato k="Puesto" v={detalle.nomina.puesto} />}
+                      {detalle.nomina.departamento && <Dato k="Departamento" v={detalle.nomina.departamento} />}
+                      {detalle.nomina.curp_receptor && <Dato k="CURP" v={detalle.nomina.curp_receptor} />}
+                      {detalle.nomina.num_seguridad_social && <Dato k="NSS" v={detalle.nomina.num_seguridad_social} />}
+                    </div>
+                  </div>
+                )}
 
                 {CLASIFICABLES.includes(detalle.tipo) && (
                   <div className="space-y-2 rounded-md border p-3">
@@ -1015,7 +1325,14 @@ export default function CfdiPageRoute() {
                           <li key={p.cfdi_pago_id + p.uuid_relacionado} className="flex justify-between gap-2">
                             <span>
                               Parcialidad {p.num_parcialidad ?? "—"} · {p.fecha_pago ? formatDate(p.fecha_pago) : "—"} ·{" "}
-                              <span className="font-mono">{p.uuid_pago.slice(0, 8)}…</span>
+                              <button
+                                type="button"
+                                className="font-mono underline decoration-dotted underline-offset-2 hover:text-primary"
+                                title="Ver el complemento de pago"
+                                onClick={() => void verDetalle(p.cfdi_pago_id)}
+                              >
+                                {p.uuid_pago.slice(0, 8)}…
+                              </button>
                             </span>
                             <span className="tabular-nums">
                               {formatMoney2(p.imp_pagado)}
@@ -1034,7 +1351,22 @@ export default function CfdiPageRoute() {
                       {detalle.pagos_relacionados.map((p) => (
                         <li key={p.uuid_relacionado + String(p.num_parcialidad)} className="flex justify-between gap-2">
                           <span>
-                            <span className="font-mono">{p.uuid_relacionado}</span> · parcialidad {p.num_parcialidad ?? "—"}
+                            {p.cfdi_relacionado_id ? (
+                              <button
+                                type="button"
+                                className="font-mono underline decoration-dotted underline-offset-2 hover:text-primary"
+                                title="Ver la factura que liquida"
+                                onClick={() => void verDetalle(p.cfdi_relacionado_id!)}
+                              >
+                                {p.uuid_relacionado}
+                              </button>
+                            ) : (
+                              <span className="font-mono" title="La factura no está en la bóveda">
+                                {p.uuid_relacionado}
+                              </span>
+                            )}{" "}
+                            · parcialidad {p.num_parcialidad ?? "—"}
+                            {p.fecha_pago ? ` · pagado el ${formatDate(p.fecha_pago)}` : ""}
                           </span>
                           <span className="tabular-nums">
                             {formatMoney2(p.imp_pagado)}
@@ -1045,41 +1377,120 @@ export default function CfdiPageRoute() {
                     </ul>
                   </div>
                 )}
-                {detalle.alertas.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="font-medium">Alertas de validación</p>
-                    {detalle.alertas.map((a) => (
-                      <div key={a.id} className="flex items-start gap-2">
-                        <Badge variant={SEVERIDAD_VARIANT[a.severidad]}>{a.severidad}</Badge>
-                        <p className="text-muted-foreground">{a.detalle}</p>
-                      </div>
-                    ))}
+
+                {(detalle.ligas_bancarias.length > 0 || detalle.conciliado) && (
+                  <div className="space-y-2 rounded-md border p-3">
+                    <div className="flex items-center justify-between">
+                      <p className="font-medium">Conciliación bancaria</p>
+                      <BadgeConciliado c={detalle} />
+                    </div>
+                    <ul className="space-y-1 text-xs">
+                      {detalle.ligas_bancarias.map((l) => (
+                        <li key={l.movimiento_id} className="flex justify-between gap-2">
+                          <span>
+                            {formatDate(l.fecha)} · {l.cuenta} · <span className="text-muted-foreground">{l.concepto}</span>
+                          </span>
+                          <span className="tabular-nums">{formatMoney2(l.importe)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    {/* Validación pedida en la revisión: que la fecha del estado de
+                        cuenta coincida con la fecha de pago del complemento. */}
+                    {detalle.tipo === "pago" &&
+                      detalle.rep_fecha_pago &&
+                      detalle.ligas_bancarias.some(
+                        (l) => Math.abs(new Date(l.fecha).getTime() - new Date(detalle.rep_fecha_pago!).getTime()) > 3 * 86400000,
+                      ) && (
+                        <p className="text-xs text-[color:var(--status-warning)]">
+                          La fecha de un movimiento del estado de cuenta difiere más de 3 días de la fecha de pago del complemento (
+                          {formatDate(detalle.rep_fecha_pago)}): revisa que correspondan.
+                        </p>
+                      )}
                   </div>
                 )}
+                {/* En un REP la alerta de cuadre de conceptos no aplica (su concepto
+                    único vale 0): se omite aunque quede guardada de cargas viejas. */}
+                {(() => {
+                  const alertas = detalle.tipo === "pago" ? detalle.alertas.filter((a) => a.regla_codigo !== "descuadre_subtotal") : detalle.alertas;
+                  return (
+                    alertas.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="font-medium">Alertas de validación</p>
+                        {alertas.map((a) => (
+                          <div key={a.id} className="flex items-start gap-2">
+                            <Badge variant={SEVERIDAD_VARIANT[a.severidad]}>{a.severidad}</Badge>
+                            <p className="text-muted-foreground">{a.detalle}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  );
+                })()}
 
-                <div>
-                  <p className="mb-2 font-medium">Conceptos</p>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Descripción</TableHead>
-                        <TableHead className="text-right">Cant.</TableHead>
-                        <TableHead className="text-right">V. unitario</TableHead>
-                        <TableHead className="text-right">Importe</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {detalle.conceptos.map((c) => (
-                        <TableRow key={c.id}>
-                          <TableCell>{c.descripcion}</TableCell>
-                          <TableCell className="text-right">{c.cantidad}</TableCell>
-                          <TableCell className="text-right tabular-nums">{formatMoney2(c.valor_unitario)}</TableCell>
-                          <TableCell className="text-right tabular-nums">{formatMoney2(c.importe)}</TableCell>
+                {/* Un REP no muestra conceptos (su concepto único "Pago" vale 0) y
+                    en nómina los conceptos se sustituyen por el desglose del recibo. */}
+                {detalle.tipo === "nomina" && detalle.nomina && detalle.nomina.conceptos.length > 0 ? (
+                  <div>
+                    <p className="mb-2 font-medium">Desglose del recibo</p>
+                    <DesgloseNomina conceptos={detalle.nomina.conceptos} />
+                  </div>
+                ) : detalle.tipo !== "pago" && detalle.tipo !== "nomina" ? (
+                  <div>
+                    <p className="mb-2 font-medium">Conceptos</p>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Descripción</TableHead>
+                          <TableHead className="whitespace-nowrap">Clave SAT</TableHead>
+                          <TableHead className="text-right">Cant.</TableHead>
+                          <TableHead className="text-right">V. unitario</TableHead>
+                          <TableHead className="text-right">Importe</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                      </TableHeader>
+                      <TableBody>
+                        {detalle.conceptos.map((c) => (
+                          <TableRow key={c.id}>
+                            <TableCell>{c.descripcion}</TableCell>
+                            <TableCell className="font-mono text-xs">{c.clave_prodserv ?? "—"}</TableCell>
+                            <TableCell className="text-right">{c.cantidad}</TableCell>
+                            <TableCell className="text-right tabular-nums">{formatMoney2(c.valor_unitario)}</TableCell>
+                            <TableCell className="text-right tabular-nums">{formatMoney2(c.importe)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : null}
+
+                {detalle.tipo !== "pago" && detalle.tipo !== "nomina" && detalle.impuestos.length > 0 && (
+                  <div>
+                    <p className="mb-2 font-medium">Desglose de impuestos</p>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Impuesto</TableHead>
+                          <TableHead>Tasa</TableHead>
+                          <TableHead className="text-right">Base</TableHead>
+                          <TableHead className="text-right">Importe</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {detalle.impuestos.map((i, idx) => (
+                          <TableRow key={idx} className={i.naturaleza === "retencion" ? "text-muted-foreground" : ""}>
+                            <TableCell>
+                              {i.nombre_local ?? IMPUESTO_LABEL[i.impuesto] ?? i.impuesto} {NATURALEZA_LABEL[i.naturaleza].toLowerCase()}
+                            </TableCell>
+                            <TableCell>
+                              {(i.tipo_factor ?? "").toLowerCase() === "exento" ? "Exento" : i.tasa != null ? `${+(i.tasa * 100).toFixed(4)}%` : "—"}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">{formatMoney2(i.base)}</TableCell>
+                            <TableCell className="text-right tabular-nums">{formatMoney2(i.importe)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
 
                 <div className="flex items-end justify-between gap-4">
                   <div className="text-xs text-muted-foreground">
@@ -1095,20 +1506,54 @@ export default function CfdiPageRoute() {
                       </Button>
                     )}
                   </div>
-                  <div className="flex gap-6 text-right">
-                    <div>
-                      <p className="text-muted-foreground">Subtotal</p>
-                      <p className="tabular-nums">{formatMoney2(detalle.subtotal)}</p>
+                  {/* Totales según el tipo: en un REP cuentan importe e IVA pagados;
+                      en nómina, percepciones − deducciones + otros pagos (sin IVA). */}
+                  {detalle.tipo === "pago" ? (
+                    <div className="flex gap-6 text-right">
+                      <div>
+                        <p className="text-muted-foreground">IVA pagado</p>
+                        <p className="tabular-nums">{formatMoney2(detalle.rep_iva_pagado)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Importe pagado</p>
+                        <p className="font-semibold tabular-nums">{formatMoney2(detalle.rep_importe_pagado)}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-muted-foreground">IVA</p>
-                      <p className="tabular-nums">{formatMoney2(detalle.iva)}</p>
+                  ) : detalle.tipo === "nomina" ? (
+                    <div className="flex gap-6 text-right">
+                      <div>
+                        <p className="text-muted-foreground">Percepciones</p>
+                        <p className="tabular-nums">{formatMoney2(detalle.nomina?.total_percepciones ?? detalle.subtotal)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Deducciones</p>
+                        <p className="tabular-nums">{formatMoney2(detalle.nomina?.total_deducciones ?? 0)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Otros pagos</p>
+                        <p className="tabular-nums">{formatMoney2(detalle.nomina?.total_otros_pagos ?? 0)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Neto pagado</p>
+                        <p className="font-semibold tabular-nums">{formatMoney2(detalle.total)}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-muted-foreground">Total</p>
-                      <p className="font-semibold tabular-nums">{formatMoney2(detalle.total)}</p>
+                  ) : (
+                    <div className="flex gap-6 text-right">
+                      <div>
+                        <p className="text-muted-foreground">Subtotal</p>
+                        <p className="tabular-nums">{formatMoney2(detalle.subtotal)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">IVA</p>
+                        <p className="tabular-nums">{formatMoney2(detalle.iva)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Total</p>
+                        <p className="font-semibold tabular-nums">{formatMoney2(detalle.total)}</p>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             </>
@@ -1327,6 +1772,67 @@ function Dato({ k, v }: { k: string; v: string }) {
     <div>
       <p className="text-xs text-muted-foreground">{k}</p>
       <p>{v}</p>
+    </div>
+  );
+}
+
+/** Estatus del CFDI contra la conciliación bancaria (ligas a movimientos). */
+function BadgeConciliado({ c }: { c: Cfdi }) {
+  if (c.conciliado === "conciliado") return <Badge variant="success">Conciliado</Badge>;
+  if (c.conciliado === "parcial")
+    return (
+      <Badge variant="warning" title={`Ligado ${formatMoney2(c.conciliado_importe)} en la conciliación bancaria`}>
+        Parcial
+      </Badge>
+    );
+  return (
+    <span className="text-xs text-muted-foreground" title="Sin movimiento bancario ligado en la conciliación">
+      Sin conciliar
+    </span>
+  );
+}
+
+const IMPUESTO_LABEL: Record<string, string> = { "001": "ISR", "002": "IVA", "003": "IEPS" };
+const NATURALEZA_LABEL: Record<string, string> = { traslado: "Trasladado", retencion: "Retenido", no_objeto: "No objeto" };
+
+/** Desglose del recibo de nómina: percepciones, deducciones y otros pagos. */
+function DesgloseNomina({ conceptos }: { conceptos: NominaConcepto[] }) {
+  const grupos = (["percepcion", "deduccion", "otro_pago"] as const).map((g) => ({
+    grupo: g,
+    filas: conceptos.filter((c) => c.grupo === g),
+  }));
+  return (
+    <div className="space-y-3">
+      {grupos.map(
+        ({ grupo, filas }) =>
+          filas.length > 0 && (
+            <div key={grupo}>
+              <p className="mb-1 text-xs font-medium text-muted-foreground">{GRUPO_NOMINA[grupo]}</p>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-16">Clave</TableHead>
+                    <TableHead>Concepto</TableHead>
+                    <TableHead className="text-right">Gravado</TableHead>
+                    <TableHead className="text-right">Exento</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filas.map((f, i) => (
+                    <TableRow key={`${grupo}-${i}`}>
+                      <TableCell className="font-mono text-xs">{f.tipo_codigo ?? f.clave ?? "—"}</TableCell>
+                      <TableCell>{f.concepto}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatMoney2(f.gravado)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatMoney2(f.exento)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{formatMoney2(f.gravado + f.exento)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ),
+      )}
     </div>
   );
 }

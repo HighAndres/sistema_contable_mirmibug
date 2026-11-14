@@ -11,12 +11,14 @@ from sqlalchemy.orm import Session
 from app.api.deps import EmpresaContext, require_permissions
 from app.db.session import get_db
 from app.modules.bitacora import crud as bitacora_crud
-from app.modules.impuestos import calculos, crud
+from app.modules.impuestos import calculos, crud, isn as isn_mod
 from app.modules.impuestos.regimenes import validar_regimen
 from app.modules.impuestos.schemas import (
     ConfiguracionFiscalRead,
     ConfiguracionFiscalUpdate,
     DesgloseIvaRead,
+    FilaIsnRead,
+    IsnRead,
     IsrRead,
     IvaRead,
     MesIsrRead,
@@ -88,6 +90,43 @@ def isr(
         ],
         advertencias=r.advertencias,
         anios_disponibles=crud.anios_con_datos(db, empresa_id=ctx.empresa.id),
+    )
+
+
+@router.get("/isn", response_model=IsnRead)
+def isn(
+    anio: int = Query(default=None, ge=2000, le=2100),
+    mes: int | None = Query(default=None, ge=1, le=12, description="Vacío = anual"),
+    ctx: EmpresaContext = Depends(require_permissions("impuestos.leer")),
+    db: Session = Depends(get_db),
+) -> IsnRead:
+    """Previa del Impuesto Sobre Nóminas (estatal) por entidad federativa: base
+    gravable (percepciones de los recibos pagados en el periodo, por la
+    ClaveEntFed del complemento) por la tasa de cada entidad. Las tasas son
+    referenciales y se ajustan en `impuestos/isn.py` cuando cambia una ley."""
+    anio = anio or date.today().year
+    r = isn_mod.isn_periodo(db, empresa_id=ctx.empresa.id, anio=anio, mes=mes)
+    return IsnRead(
+        anio=anio,
+        mes=mes,
+        filas=[
+            FilaIsnRead(
+                entidad_codigo=f.entidad_codigo,
+                entidad_nombre=f.entidad_nombre,
+                tasa=float(f.tasa) if f.tasa is not None else None,
+                recibos=f.recibos,
+                percepciones=float(f.percepciones),
+                deducciones=float(f.deducciones),
+                otros_pagos=float(f.otros_pagos),
+                base=float(f.base),
+                isn=float(f.isn),
+            )
+            for f in r.filas
+        ],
+        total_base=float(r.total_base),
+        total_isn=float(r.total_isn),
+        advertencias=r.advertencias,
+        anios_disponibles=isn_mod.anios_con_nomina(db, empresa_id=ctx.empresa.id),
     )
 
 

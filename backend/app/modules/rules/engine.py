@@ -38,8 +38,10 @@ def evaluar_cfdi(cfdi: Cfdi, *, hoy: date | None = None) -> list[tuple[str, str,
             f"El RFC {rfc_sospechoso} aparece en la lista de posibles EFOS (art. 69-B, simulada).",
         ))
 
+    # En un REP el concepto único "Pago" vale 0 por definición: el cuadre de
+    # conceptos contra subtotal no aplica (revisión de octubre 2026).
     suma_conceptos = sum((Decimal(str(c.importe)) for c in cfdi.conceptos), Decimal("0"))
-    if cfdi.conceptos and abs(suma_conceptos - Decimal(str(cfdi.subtotal))) > TOLERANCIA_CUADRE:
+    if cfdi.tipo != "pago" and cfdi.conceptos and abs(suma_conceptos - Decimal(str(cfdi.subtotal))) > TOLERANCIA_CUADRE:
         alertas.append((
             "descuadre_subtotal",
             "media",

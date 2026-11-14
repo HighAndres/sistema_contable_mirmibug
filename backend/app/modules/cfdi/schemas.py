@@ -11,7 +11,16 @@ class CfdiConceptoRead(BaseModel):
     descripcion: str
     cantidad: float
     unidad_codigo: str | None
+    clave_prodserv: str | None = None
     valor_unitario: float
+    importe: float
+
+
+class TasaIvaRead(BaseModel):
+    """Una tasa de IVA trasladado del comprobante: "16%", "8%", "0%" o "Exento"."""
+
+    etiqueta: str
+    base: float
     importe: float
 
 
@@ -53,6 +62,30 @@ class CfdiRead(BaseModel):
     concepto: str | None = None
     cuenta_contable: str | None = None
     referencia_bancaria: str | None = None
+    # Derivados contra la conciliación bancaria: cuánto del CFDI está ligado a
+    # movimientos del estado de cuenta. None/0 = sin conciliar.
+    conciliado: str | None = None  # conciliado | parcial
+    conciliado_importe: float = 0
+    # Derivado: si el comprobante cuenta para la declaración del periodo. Se
+    # calcula solo (vigente + deducible + pagada o conciliada) y el contador lo
+    # mueve a mano con la clasificación. None en REP y nómina.
+    en_declaracion: bool | None = None
+    # Desglose del IVA trasladado por tasa (de cfdi_impuestos). Vacío en los
+    # CFDI simulados o cargados antes de guardarse el desglose.
+    desglose_iva: list[TasaIvaRead] = []
+    # Si es REP (tipo pago): fecha e importes del complemento, para no mostrar
+    # subtotal/total que en un REP siempre valen 0.
+    rep_fecha_pago: date | None = None
+    rep_importe_pagado: float = 0
+    rep_iva_pagado: float = 0
+    # Si es recibo de nómina: lo que pide el listado (desglose y filtros).
+    nomina_fecha_pago: date | None = None
+    nomina_percepciones: float | None = None
+    nomina_deducciones: float | None = None
+    nomina_otros_pagos: float | None = None
+    registro_patronal: str | None = None
+    entidad_codigo: str | None = None
+    periodicidad_codigo: str | None = None
 
 
 CLASIFICACIONES = ("deducible", "no_deducible", "deduccion_personal")
@@ -103,6 +136,16 @@ class ValoresClasificacion(BaseModel):
     sin_clasificar: int
 
 
+class ValoresFiltros(BaseModel):
+    """Valores presentes en los CFDI de la empresa, para poblar los filtros de
+    la lista (uso de CFDI y los de nómina) sin inventar catálogos."""
+
+    usos_cfdi: list[str]
+    registros_patronales: list[str]
+    entidades: list[str]
+    periodicidades: list[str]
+
+
 class PagoManualRequest(BaseModel):
     fecha: date
     nota: str | None = Field(default=None, max_length=255)
@@ -112,6 +155,8 @@ class PagoDoctoRead(BaseModel):
     cfdi_pago_id: uuid.UUID
     uuid_pago: str
     uuid_relacionado: str
+    # Id de la factura PPD que liquida, si está en la bóveda (para ir directo).
+    cfdi_relacionado_id: uuid.UUID | None = None
     num_parcialidad: int | None
     imp_saldo_anterior: float | None
     imp_pagado: float
@@ -119,6 +164,69 @@ class PagoDoctoRead(BaseModel):
     iva_pagado: float
     fecha_pago: date | None
     forma_pago_codigo: str | None
+
+
+class DesgloseImpuestoRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    naturaleza: str  # traslado | retencion | no_objeto
+    impuesto: str  # 001 ISR · 002 IVA · 003 IEPS · local
+    tipo_factor: str | None
+    tasa: float | None
+    base: float
+    importe: float
+    nombre_local: str | None
+
+
+class LigaBancariaRead(BaseModel):
+    """Movimiento del estado de cuenta ligado a este CFDI en la conciliación."""
+
+    movimiento_id: uuid.UUID
+    fecha: date
+    concepto: str
+    referencia: str | None
+    cuenta: str  # alias de la cuenta bancaria
+    importe: float  # lo aplicado a este CFDI
+
+
+class NominaConceptoRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    grupo: str  # percepcion | deduccion | otro_pago
+    tipo_codigo: str | None
+    clave: str | None
+    concepto: str
+    gravado: float
+    exento: float
+
+
+class NominaDetalleRead(BaseModel):
+    """Complemento de nómina del recibo. Los datos personales del trabajador
+    (CURP, NSS, cuenta bancaria, salarios de cotización) solo se llenan si el
+    usuario tiene el permiso nomina.leer."""
+
+    tipo_nomina: str | None
+    fecha_pago: date | None
+    fecha_inicial_pago: date | None
+    fecha_final_pago: date | None
+    num_dias_pagados: float | None
+    total_percepciones: float
+    total_deducciones: float
+    total_otros_pagos: float
+    registro_patronal: str | None
+    periodicidad_pago: str | None
+    clave_ent_fed: str | None
+    num_empleado: str | None
+    departamento: str | None
+    puesto: str | None
+    # Solo con nomina.leer:
+    curp_receptor: str | None = None
+    num_seguridad_social: str | None = None
+    banco: str | None = None
+    cuenta_bancaria: str | None = None
+    salario_base_cot_apor: float | None = None
+    salario_diario_integrado: float | None = None
+    conceptos: list[NominaConceptoRead] = []
 
 
 class CfdiDetalleRead(CfdiRead):
@@ -130,6 +238,12 @@ class CfdiDetalleRead(CfdiRead):
     # Si es REP: documentos que paga.
     pagos_relacionados: list[PagoDoctoRead] = []
     tiene_xml: bool = False
+    # Desglose completo de impuestos por tasa (traslados, retenciones, locales).
+    impuestos: list[DesgloseImpuestoRead] = []
+    # Movimientos bancarios ligados en la conciliación.
+    ligas_bancarias: list[LigaBancariaRead] = []
+    # Complemento de nómina (solo recibos de nómina).
+    nomina: NominaDetalleRead | None = None
 
 
 class CfdiPage(BaseModel):
